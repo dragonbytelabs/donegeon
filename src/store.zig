@@ -20,6 +20,15 @@ pub const TaskStore = struct {
         return self.tasks.allocator; // available on AutoHashMap
     }
 
+    fn dataFilePath(self: *TaskStore, path: []const u8) ![]const u8 {
+        const allocator = self.alloc();
+        const dir = try std.fs.getAppDataDir(allocator, "donegeon");
+        defer allocator.free(dir);
+        try std.fs.cwd().makePath(dir);
+
+        return try std.fs.path.join(allocator, &.{ dir, path });
+    }
+
     pub fn addTask(self: *TaskStore, name: []const u8, description: ?[]const u8) !Task {
         const task = Task.init(self.next_id, name, description, null);
         try self.tasks.put(task.id, task);
@@ -47,8 +56,10 @@ pub const TaskStore = struct {
 
     pub fn save(self: *TaskStore, path: []const u8) !void {
         const allocator = self.alloc();
+        const file_path = try self.dataFilePath();
+        defer allocator.free(path);
 
-        const file = try std.fs.cwd().createFile(path, .{});
+        const file = try std.fs.cwd().createFile(file_path, .{});
         defer file.close();
 
         const task_slice = try self.toSlice();
@@ -113,9 +124,9 @@ test "task counter increments" {
 test "tasks are saved to disk" {
     var store = TaskStore.init(std.testing.allocator);
     defer store.deinit();
-    defer std.fs.cwd().deleteFile("tasks.json") catch {};
 
-    const path = "tasks.json";
+    const path = "tasks_test.json";
+    defer std.fs.cwd().deleteFile(path) catch {};
 
     _ = std.fs.cwd().statFile(path) catch |err| {
         try std.testing.expectEqual(error.FileNotFound, err);
@@ -133,10 +144,9 @@ test "tasks are saved to disk" {
 
 test "tasks are loaded from disk" {
     var store = TaskStore.init(std.testing.allocator);
+    const path = "test_tasks.json";
     defer store.deinit();
-    defer std.fs.cwd().deleteFile("tasks.json") catch {};
-
-    const path = "tasks.json";
+    defer std.fs.cwd().deleteFile(path) catch {};
 
     _ = try store.addTask("hi mom", null);
     _ = try store.addTask("hi mom 2", null);
