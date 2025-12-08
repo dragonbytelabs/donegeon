@@ -1,4 +1,3 @@
-//! By convention, root.zig is the root source file when making a library.
 const std = @import("std");
 
 var taskCounter: i32 = 0;
@@ -194,11 +193,8 @@ test "tasks are saved to disk" {
 
     const cwd = std.fs.cwd();
 
-    // 1) Before doing anything, the file should NOT exist
     _ = cwd.statFile("tasks.json") catch |err| {
         try std.testing.expectEqual(error.FileNotFound, err);
-        // early return from catch: nothing else to do here
-        return;
     };
 
     _ = try addTask("hi mom", null);
