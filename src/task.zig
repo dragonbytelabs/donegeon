@@ -18,3 +18,12 @@ pub const Task = struct {
         };
     }
 };
+
+test "Task init" {
+    const task = Task.init(1, "Test Task", null, null);
+    try std.testing.expect(task.id == 1);
+    try std.testing.expect(std.mem.eql(u8, task.name, "Test Task"));
+    try std.testing.expect(std.mem.eql(u8, task.tag, "home"));
+    try std.testing.expect(task.description == null);
+    try std.testing.expect(task.due == null);
+}
