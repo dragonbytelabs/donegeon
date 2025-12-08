@@ -150,7 +150,7 @@ pub fn loadTasks() !void {
     const buffer = try allocator.alloc(u8, file_size);
     defer allocator.free(buffer);
 
-    _ = try file.readAll(buffer);
+    _ = try file.read(buffer);
 
     const parsed = try std.json.parseFromSlice([]Task, allocator, buffer, .{});
     defer parsed.deinit();
@@ -173,6 +173,56 @@ test "create task with name" {
 
     const task = try addTask("hi mom", null);
     try std.testing.expectEqualStrings("hi mom", task.name);
+}
+
+test "task counter increments" {
+    init(std.testing.allocator);
+    defer deinit();
+    defer std.fs.cwd().deleteFile("tasks.json") catch {};
+
+    try std.testing.expectEqual(1, taskCounter);
+    _ = try addTask("hi mom", null);
+    _ = try addTask("hi mom 2", null);
+    _ = try addTask("hi mom 3", null);
+    try std.testing.expectEqual(4, taskCounter);
+}
+
+test "tasks are saved to disk" {
+    init(std.testing.allocator);
+    defer deinit();
+    defer std.fs.cwd().deleteFile("tasks.json") catch {};
+
+    const cwd = std.fs.cwd();
+
+    // 1) Before doing anything, the file should NOT exist
+    _ = cwd.statFile("tasks.json") catch |err| {
+        try std.testing.expectEqual(error.FileNotFound, err);
+        // early return from catch: nothing else to do here
+        return;
+    };
+
+    _ = try addTask("hi mom", null);
+    _ = try addTask("hi mom 2", null);
+    _ = try addTask("hi mom 3", null);
+
+    var src_file = try std.fs.cwd().openFile("tasks.json", .{});
+    defer src_file.close();
+
+    const stat = try src_file.stat();
+    try std.testing.expect(stat.size > 0);
+}
+
+test "tasks are loaded from disk" {
+    init(std.testing.allocator);
+    defer deinit();
+    defer std.fs.cwd().deleteFile("tasks.json") catch {};
+
+    _ = try addTask("hi mom", null);
+    _ = try addTask("hi mom 2", null);
+    _ = try addTask("hi mom 3", null);
+
+    try loadTasks();
+    try std.testing.expectEqual(tasks.count, 3);
 }
 
 test "get task by id" {
