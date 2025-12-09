@@ -56,8 +56,9 @@ pub const TaskStore = struct {
 
     pub fn save(self: *TaskStore, path: []const u8) !void {
         const allocator = self.alloc();
-        const file_path = try self.dataFilePath();
-        defer allocator.free(path);
+        const file_path = try self.dataFilePath(path);
+        defer allocator.free(file_path);
+        std.debug.print("Saving tasks to {s}\n", .{file_path});
 
         const file = try std.fs.cwd().createFile(file_path, .{});
         defer file.close();
@@ -126,9 +127,11 @@ test "tasks are saved to disk" {
     defer store.deinit();
 
     const path = "tasks_test.json";
-    defer std.fs.cwd().deleteFile(path) catch {};
+    const full_path = try store.dataFilePath(path);
+    defer std.testing.allocator.free(full_path);
+    defer std.fs.cwd().deleteFile(full_path) catch {};
 
-    _ = std.fs.cwd().statFile(path) catch |err| {
+    _ = std.fs.cwd().statFile(full_path) catch |err| {
         try std.testing.expectEqual(error.FileNotFound, err);
     };
 
@@ -138,7 +141,7 @@ test "tasks are saved to disk" {
 
     try store.save(path);
 
-    const stat = try std.fs.cwd().statFile(path);
+    const stat = try std.fs.cwd().statFile(full_path);
     try std.testing.expect(stat.size > 0);
 }
 
@@ -146,7 +149,9 @@ test "tasks are loaded from disk" {
     var store = TaskStore.init(std.testing.allocator);
     const path = "test_tasks.json";
     defer store.deinit();
-    defer std.fs.cwd().deleteFile(path) catch {};
+    const full_path = try store.dataFilePath(path);
+    defer std.testing.allocator.free(full_path);
+    defer std.fs.cwd().deleteFile(full_path) catch {};
 
     _ = try store.addTask("hi mom", null);
     _ = try store.addTask("hi mom 2", null);
@@ -157,6 +162,6 @@ test "tasks are loaded from disk" {
     var store2 = TaskStore.init(std.testing.allocator);
     defer store2.deinit();
 
-    try store2.load(path);
+    try store2.load(full_path);
     try std.testing.expectEqual(@as(usize, 3), store2.tasks.count());
 }
