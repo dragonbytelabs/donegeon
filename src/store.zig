@@ -1,5 +1,6 @@
 const std = @import("std");
 const Task = @import("task.zig").Task;
+const TaskPatch = @import("task.zig").TaskPatch;
 
 pub const TaskStore = struct {
     tasks: std.AutoHashMap(i32, Task),
@@ -38,6 +39,29 @@ pub const TaskStore = struct {
 
     pub fn getTask(self: *TaskStore, id: i32) ?Task {
         return self.tasks.get(id);
+    }
+
+    pub fn modifyTask(self: *TaskStore, id: i32, patch: TaskPatch) !?Task {
+        var entry = self.getTask(id) orelse
+            return error.TaskNotFound;
+
+        if (patch.name) |new_name| {
+            entry.name = new_name;
+        }
+
+        if (patch.description) |new_description| {
+            entry.description = new_description;
+        }
+
+        if (patch.tags) |new_tags| {
+            entry.tags = new_tags;
+        }
+
+        if (patch.due) |new_due| {
+            entry.due = new_due;
+        }
+
+        return entry;
     }
 
     pub fn toSlice(self: *TaskStore) ![]Task {
@@ -164,4 +188,29 @@ test "tasks are loaded from disk" {
 
     try store2.load(full_path);
     try std.testing.expectEqual(@as(usize, 3), store2.tasks.count());
+}
+
+test "modify task" {
+    var store = TaskStore.init(std.testing.allocator);
+    defer store.deinit();
+
+    const task = try store.addTask("initial name", "initial description");
+    try std.testing.expectEqualStrings("initial name", task.name);
+    try std.testing.expectEqualStrings("initial description", task.description orelse "");
+
+    const patch = TaskPatch{
+        .name = "updated name",
+        .description = "updated description",
+        .tags = &[_][]const u8{ "work", "urgent" },
+        .due = 1700000000,
+    };
+
+    const modified_task_opt = try store.modifyTask(task.id, patch);
+    try std.testing.expect(modified_task_opt != null);
+    const modified_task = modified_task_opt.?;
+
+    try std.testing.expectEqualStrings("updated name", modified_task.name);
+    try std.testing.expectEqualStrings("updated description", modified_task.description orelse "");
+    try std.testing.expectEqual(@as(usize, 2), modified_task.tags.len);
+    try std.testing.expectEqual(@as(i64, 1700000000), modified_task.due orelse -1);
 }
