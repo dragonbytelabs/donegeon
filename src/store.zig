@@ -1,6 +1,7 @@
 const std = @import("std");
 const Task = @import("task.zig").Task;
 const TaskPatch = @import("task.zig").TaskPatch;
+const tag = @import("tag.zig");
 
 pub const TaskStore = struct {
     tasks: std.AutoHashMap(i32, Task),
@@ -42,26 +43,40 @@ pub const TaskStore = struct {
     }
 
     pub fn modifyTask(self: *TaskStore, id: i32, patch: TaskPatch) !?Task {
-        var entry = self.getTask(id) orelse
+        var task = self.tasks.getPtr(id) orelse
             return error.TaskNotFound;
 
         if (patch.name) |new_name| {
-            entry.name = new_name;
+            task.name = new_name;
         }
 
         if (patch.description) |new_description| {
-            entry.description = new_description;
-        }
-
-        if (patch.tags) |new_tags| {
-            entry.tags = new_tags;
+            task.description = new_description;
         }
 
         if (patch.due) |new_due| {
-            entry.due = new_due;
+            task.due = new_due;
         }
 
-        return entry;
+        if (patch.tags) |tag_patch| {
+            switch (tag_patch) {
+                .add => |t| {
+                    task = try tag.addTagToTask(self.alloc(), task, t);
+                },
+                .remove => |t| {
+                    task = try tag.removeTagFromTask(self.alloc(), task, t);
+                },
+                .replace => |new_tags| {
+                    task.tags = new_tags;
+                },
+                .clear => {
+                    task.tags = &.{};
+                },
+            }
+        }
+
+        try self.tasks.put(id, task);
+        return task;
     }
 
     pub fn toSlice(self: *TaskStore) ![]Task {
