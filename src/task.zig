@@ -1,4 +1,5 @@
 const std = @import("std");
+const TagPatch = @import("tag.zig").TagPatch;
 
 pub const Task = struct {
     id: i32,
@@ -8,7 +9,7 @@ pub const Task = struct {
     due: ?i64,
 
     pub fn init(id: i32, name: []const u8, description: ?[]const u8, tags: ?[]const []const u8) Task {
-        const default_tag = &[_][]const u8{"home"};
+        const default_tag = &[_][]const u8{"inbox"};
         return .{
             .id = id,
             .name = name,
@@ -21,16 +22,16 @@ pub const Task = struct {
 
 pub const TaskPatch = struct {
     name: ?[]const u8 = null,
-    tags: ?[]const []const u8 = null,
     description: ?[]const u8 = null,
     due: ?i64 = null,
+    tags: ?TagPatch = null,
 };
 
 test "Task init with default tag" {
     const task = Task.init(1, "Test Task", null, null);
     try std.testing.expect(task.id == 1);
     try std.testing.expect(std.mem.eql(u8, task.name, "Test Task"));
-    try std.testing.expect(std.mem.eql(u8, task.tags[0], "home"));
+    try std.testing.expect(std.mem.eql(u8, task.tags[0], "inbox"));
     try std.testing.expect(task.description == null);
     try std.testing.expect(task.due == null);
 }
