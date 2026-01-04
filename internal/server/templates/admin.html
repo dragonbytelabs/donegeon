@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>donegeon admin</title>
+    <style>
+      body {
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial;
+        margin: 24px;
+        color: #111;
+      }
+      h1 {
+        margin: 0 0 12px;
+      }
+      .muted {
+        color: #666;
+        margin: 0 0 20px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 10px;
+        vertical-align: top;
+      }
+      th {
+        background: #f7f7f7;
+        text-align: left;
+      }
+      code {
+        background: #f3f3f3;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+      details {
+        margin-top: 6px;
+      }
+      textarea {
+        width: 100%;
+        min-height: 90px;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      button {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid #ccc;
+        background: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #f7f7f7;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .pill {
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid #ddd;
+        font-size: 12px;
+      }
+      .mini {
+        padding: 6px 8px;
+        border-radius: 10px;
+        border: 1px solid #ddd;
+        font-size: 12px;
+        width: 120px;
+      }
+      pre {
+        margin: 0;
+      }
+    </style>
+
+    <script>
+      const ADMIN_PORT = {{ .Port | js }};
+    </script>
+  </head>
+
+  <body>
+    <h1>/_/admin</h1>
+    <p class="muted">
+      Route catalog (Swagger-ish). Try calls from here or copy curl.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Path</th>
+          <th>Summary</th>
+          <th>Try</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range $i, $rt := .Routes }} {{ $id := printf "r%d" $i }}
+        <tr>
+          <td><span class="pill">{{ $rt.Method }}</span></td>
+          <td><code>{{ $rt.Pattern }}</code></td>
+          <td>{{ $rt.Summary }}</td>
+          <td>
+            <div class="row">
+              {{ if (contains $rt.Pattern "{id}") }}
+              <input
+                class="mini"
+                id="{{ $id }}_param_id"
+                placeholder="id (e.g. 1)"
+                value="1"
+              />
+              {{ end }}
+              <button
+                onclick="tryCall('{{ $id }}','{{ $rt.Method }}','{{ $rt.Pattern }}')"
+              >
+                Send
+              </button>
+              <button
+                onclick="copyCurl('{{ $rt.Method }}','{{ $rt.Pattern }}', document.getElementById('{{ $id }}_body')?.value || '{}', '{{ $id }}')"
+              >
+                Copy curl
+              </button>
+            </div>
+
+            <details>
+              <summary>Body</summary>
+              <textarea id="{{ $id }}_body" placeholder="{}">
+{{ $rt.ExampleBody }}</textarea
+              >
+            </details>
+
+            <details>
+              <summary>Response</summary>
+              <pre id="{{ $id }}_out" style="white-space: pre-wrap"></pre>
+            </details>
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+
+    <script>
+      function resolvePath(id, path) {
+        // Optional: support {id} replacement
+        const el = document.getElementById(id + "_param_id");
+        if (!el) return path;
+        const val = (el.value || "").trim();
+        if (!val) return path;
+        return path.replaceAll("{id}", encodeURIComponent(val));
+      }
+
+      async function tryCall(id, method, path) {
+        const out = document.getElementById(id + "_out");
+        const bodyEl = document.getElementById(id + "_body");
+        out.textContent = "Loading...";
+
+        const resolved = resolvePath(id, path);
+
+        let opts = { method, headers: { "Content-Type": "application/json" } };
+        if (method !== "GET") {
+          const raw = bodyEl?.value || "{}";
+          opts.body = raw;
+        }
+
+        try {
+          const res = await fetch(resolved, opts);
+          const text = await res.text();
+          out.textContent = "HTTP " + res.status + "\n" + text;
+        } catch (e) {
+          out.textContent = "ERROR: " + e;
+        }
+      }
+
+      function copyCurl(method, path, body, id) {
+        const resolved = resolvePath(id, path);
+        let cmd =
+          "curl -i -X " + method + " http://localhost:" + ADMIN_PORT + resolved;
+        if (method !== "GET") {
+          cmd +=
+            " -H 'Content-Type: application/json' -d '" +
+            String(body).replaceAll("'", "'\\''") +
+            "'";
+        }
+        navigator.clipboard.writeText(cmd);
+      }
+    </script>
+  </body>
+</html>
