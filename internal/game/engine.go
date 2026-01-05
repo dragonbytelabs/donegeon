@@ -747,8 +747,10 @@ func (e Engine) OpenDeck(ctx context.Context, deckID string) (deck.OpenResult, e
 	for _, drop := range drops {
 		switch drop.Type {
 		case "loot":
-			lootType := loot.Type(drop.LootType)
-			inv.Add([]loot.Drop{{Type: lootType, Amount: drop.LootAmount}})
+			// Loot cards are spawned on the board for manual collection
+			// Do not auto-add to inventory - player must drag to Collect deck
+			// lootType := loot.Type(drop.LootType)
+			// inv.Add([]loot.Drop{{Type: lootType, Amount: drop.LootAmount}})
 		case "modifier":
 			// Modifiers go into a pool to be attached later
 			// For now, we just track them in the drop result

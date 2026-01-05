@@ -109,3 +109,81 @@ func (s *Service) GetActiveQuests(ctx context.Context) ([]Quest, error) {
 
 	return s.repo.ListActive(ctx)
 }
+
+// UnlockNextStoryQuest unlocks the next story quest in sequence
+func (s *Service) UnlockNextStoryQuest(ctx context.Context) error {
+	// Get all quests
+	allQuests, err := s.repo.List(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Find completed story quests and locked story quests
+	var completedStory []Quest
+	var lockedStory []Quest
+
+	for _, q := range allQuests {
+		if q.Type == TypeStory {
+			if q.Status == StatusComplete {
+				completedStory = append(completedStory, q)
+			} else if q.Status == StatusLocked {
+				lockedStory = append(lockedStory, q)
+			}
+		}
+	}
+
+	// If no locked story quests, nothing to unlock
+	if len(lockedStory) == 0 {
+		return nil
+	}
+
+	// Find the next quest to unlock (by day number)
+	var nextQuest *Quest
+	for i := range lockedStory {
+		if nextQuest == nil || lockedStory[i].Day < nextQuest.Day {
+			nextQuest = &lockedStory[i]
+		}
+	}
+
+	// Unlock it
+	if nextQuest != nil {
+		return s.repo.Activate(ctx, nextQuest.ID)
+	}
+
+	return nil
+}
+
+// ProcessDayEnd handles end-of-day quest progression
+func (s *Service) ProcessDayEnd(ctx context.Context) error {
+	// Auto-complete any quests with met objectives
+	if err := s.RefreshProgress(ctx); err != nil {
+		return err
+	}
+
+	// Unlock next story quest if current one is complete
+	if err := s.UnlockNextStoryQuest(ctx); err != nil {
+		return err
+	}
+
+	// Reset or activate new daily quests (deactivate old ones, activate new ones)
+	// For now, just activate one daily quest if none are active
+	active, err := s.repo.ListActive(ctx)
+	if err != nil {
+		return err
+	}
+
+	hasActiveDaily := false
+	for _, q := range active {
+		if q.Type == TypeDaily {
+			hasActiveDaily = true
+			break
+		}
+	}
+
+	if !hasActiveDaily {
+		_, err = s.ActivateDaily(ctx, 1)
+		return err
+	}
+
+	return nil
+}

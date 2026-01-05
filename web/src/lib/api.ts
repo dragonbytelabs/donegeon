@@ -133,6 +133,11 @@ export const api = {
 
   // loot
   loot: () => request<Inventory>("/api/loot"),
+  collectLoot: (loot_type: string, amount: number) =>
+    request<Inventory>("/api/loot/collect", {
+      method: "POST",
+      body: JSON.stringify({ loot_type, amount }),
+    }),
 
   // decks
   listDecks: () => request<Deck[]>("/api/decks"),

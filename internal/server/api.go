@@ -344,6 +344,14 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 
+		// Unlock next story quest after completing one
+		if app.QuestService != nil {
+			if err := app.QuestService.UnlockNextStoryQuest(r.Context()); err != nil {
+				// Log error but don't fail the claim
+				log.Printf("Quest unlock error: %v", err)
+			}
+		}
+
 		// Return rewards
 		writeJSON(w, map[string]any{
 			"rewards": rewards,
@@ -431,6 +439,15 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+
+		// Process end-of-day quest progression
+		if app.QuestService != nil {
+			if err := app.QuestService.ProcessDayEnd(r.Context()); err != nil {
+				// Log error but don't fail the day tick
+				log.Printf("Quest progression error: %v", err)
+			}
+		}
+
 		writeJSON(w, res)
 	})
 
@@ -713,6 +730,32 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+		writeJSON(w, inv)
+	})
+
+	Handle(mux, rr, "POST /api/loot/collect", "Collect loot from board", `{"loot_type":"coin","amount":5}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			LootType string `json:"loot_type"`
+			Amount   int    `json:"amount"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+
+		inv, err := lootRepo.Get(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		inv.Add([]loot.Drop{{Type: loot.Type(body.LootType), Amount: body.Amount}})
+
+		if err := lootRepo.Update(r.Context(), inv); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
 		writeJSON(w, inv)
 	})
 

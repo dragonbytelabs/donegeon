@@ -605,8 +605,8 @@ export default function BoardPage() {
                 d.quests = quests;
                 d.loading = false;
 
-                // Filter to only live tasks for board display
-                const liveTasks = tasks.filter(t => t.zone === "live");
+                // Filter to only live tasks that aren't completed
+                const liveTasks = tasks.filter(t => t.zone === "live" && !t.completed);
 
                 // Load saved positions once on first render
                 const savedPositions = d.cards.length === 0 ? loadSavedPositions() : new Map();
@@ -882,6 +882,28 @@ export default function BoardPage() {
                 const draggedCard = d.cards[cardIndex];
                 d.hoverTarget = null;
 
+                // Check if hovering over Collect deck (for loot cards)
+                if (draggedCard.type === "loot") {
+                    const collectDeck = document.getElementById("collect-deck");
+                    if (collectDeck) {
+                        const deckRect = collectDeck.getBoundingClientRect();
+                        const cardScreenX = draggedCard.x + d.cameraX;
+                        const cardScreenY = draggedCard.y + d.cameraY + 60; // Account for top bar
+                        
+                        // Check if card center is over the deck
+                        if (
+                            cardScreenX >= deckRect.left - 40 &&
+                            cardScreenX <= deckRect.right + 40 &&
+                            cardScreenY >= deckRect.top - 40 &&
+                            cardScreenY <= deckRect.bottom + 40
+                        ) {
+                            d.hoverTarget = "collect-deck";
+                            currentHoverTarget = "collect-deck";
+                            return; // Don't check other cards if hovering over collect
+                        }
+                    }
+                }
+
                 // When dragging a modifier, prioritize finding task cards
                 const isModifier = draggedCard.type === "modifier";
                 const sortedCards = isModifier
@@ -917,7 +939,7 @@ export default function BoardPage() {
             });
         };
 
-        const handleUp = () => {
+        const handleUp = async () => {
             console.log("Mouse up! Hover target was:", currentHoverTarget);
 
             // Get current state
@@ -925,6 +947,34 @@ export default function BoardPage() {
             const targetCard = currentHoverTarget ? st.cards.find(c => c.id === currentHoverTarget) : null;
 
             console.log("Dragged card:", draggedCard?.type, "Target card:", targetCard?.type);
+
+            // Handle loot collection
+            if (draggedCard && currentHoverTarget === "collect-deck" && draggedCard.type === "loot") {
+                const lootData = draggedCard.data as { loot_type: string; loot_amount: number };
+                try {
+                    // Update inventory via API
+                    await api.collectLoot(lootData.loot_type, lootData.loot_amount);
+                    
+                    // Remove loot card from board
+                    update((d) => {
+                        d.cards = d.cards.filter(c => c.id !== draggedCard.id);
+                        d.dragging = null;
+                        d.hoverTarget = null;
+                    });
+                    
+                    // Refresh inventory display
+                    await refresh();
+                    
+                    console.log(`Collected ${lootData.loot_amount} ${lootData.loot_type}`);
+                } catch (error) {
+                    console.error("Failed to collect loot:", error);
+                }
+                
+                saveBoardState(st.cards.filter(c => c.id !== draggedCard.id));
+                window.removeEventListener("mousemove", handleMove);
+                window.removeEventListener("mouseup", handleUp);
+                return;
+            }
 
             if (draggedCard && targetCard) {
                 console.log("Calling handleCardDrop...");
@@ -953,25 +1003,17 @@ export default function BoardPage() {
         try {
             console.log('Completing task:', taskId);
 
-            // Find the task card and its modifiers
+            // Find the task card
             const taskCard = st.cards.find(c => c.id === `task-${taskId}`);
             if (!taskCard) {
                 throw new Error('Task card not found');
             }
 
             const task = taskCard.data as Task;
-
-            // Find attached modifiers and all child cards
-            const attachedModifiers = st.cards.filter(c =>
-                c.parentId === taskCard.id && c.type === 'modifier'
-            );
             
             // Complete the task
             const result = await api.completeTask(taskId);
             console.log('Task completed successfully:', result);
-
-            // Remove all modifiers attached to this task
-            const modifierIds = attachedModifiers.map(m => m.id);
             
             // Build reward message
             let rewardMsg = `✓ Completed "${task.name}"!`;
@@ -984,14 +1026,44 @@ export default function BoardPage() {
                 rewardMsg += ` | Stamina restored!`;
             }
             
-            // Immediately remove the task card and all its modifiers from board
-            // Keep the villager if it exists
+            // Update the board: remove task, handle modifiers based on charges
             update(d => {
                 d.cards = d.cards.filter(c => {
                     // Remove the task
                     if (c.id === `task-${taskId}`) return false;
-                    // Remove all modifiers that were attached to this task
-                    if (modifierIds.includes(c.id)) return false;
+                    
+                    // Handle modifiers based on their charge system
+                    if (c.parentId === taskCard.id && c.type === 'modifier') {
+                        const modData = c.data as any;
+                        
+                        // Persistent modifiers (max_charges = 0) stay attached to tasks
+                        // Examples: deadline_pin
+                        if (modData.max_charges === 0) {
+                            // Keep persistent modifier attached - don't unparent
+                            return true;
+                        }
+                        
+                        // Charge-based modifiers (max_charges > 0) decrement on use
+                        // Examples: recurring_contract (4), schedule_token (2), importance_seal (3)
+                        if (modData.max_charges > 0) {
+                            // Decrement charges
+                            modData.charges = Math.max(0, (modData.charges || 0) - 1);
+                            
+                            // If spent (no charges left), remove it
+                            if (modData.charges <= 0) {
+                                return false;
+                            } else {
+                                // Still has charges, unparent and return to board
+                                c.parentId = undefined;
+                                c.data = modData;
+                                return true;
+                            }
+                        }
+                        
+                        // Fallback: unknown modifier type, remove it
+                        return false;
+                    }
+                    
                     // Keep everything else (including the villager)
                     return true;
                 });
@@ -1043,13 +1115,13 @@ export default function BoardPage() {
                         d.error = `✓ Assigned "${task.name}" to ${villager.name}`;
                         setTimeout(() => update((d) => { d.error = null; }), 2000);
 
-                        // Stack task on villager with prominent offset
+                        // Stack vertically: villager at bottom, task above
                         const taskCard = d.cards.find(c => c.id === `task-${task.id}`);
                         const villagerCard = d.cards.find(c => c.id === `villager-${villager.id}`);
                         if (taskCard && villagerCard) {
                             taskCard.parentId = villagerCard.id;
-                            taskCard.x = villagerCard.x + 20;
-                            taskCard.y = villagerCard.y + 20;
+                            taskCard.x = villagerCard.x; // No horizontal offset
+                            taskCard.y = villagerCard.y - 30; // 30px up to show title
                         }
                     });
 
@@ -1100,21 +1172,19 @@ export default function BoardPage() {
                     d.error = `✓ Applied ${modifier.type.replace(/_/g, ' ')} to "${task.name}"`;
                     setTimeout(() => update((d) => { d.error = null; }), 2000);
 
-                    // Stack modifier on task - offset to top-left to avoid blocking info button
-                    // Multiple modifiers on same task should be staggered
+                    // Stack in vertical column: task at bottom, modifiers and villagers stacked above
                     const modCardIndex = d.cards.findIndex(c => c.id === modCard.id);
                     if (modCardIndex !== -1) {
                         d.cards[modCardIndex].parentId = taskCard.id;
 
-                        // Count how many modifiers are already on this task
-                        const existingModifiers = d.cards.filter(c =>
-                            c.parentId === taskCard.id && c.type === 'modifier' && c.id !== modCard.id
+                        // Count how many cards are already on this task
+                        const existingChildren = d.cards.filter(c =>
+                            c.parentId === taskCard.id && c.id !== modCard.id
                         ).length;
 
-                        // Stagger each modifier: first at -40,-40, second at -50,-50, third at -60,-60, etc.
-                        const offset = 40 + (existingModifiers * 10);
-                        d.cards[modCardIndex].x = taskCard.x - offset;
-                        d.cards[modCardIndex].y = taskCard.y - offset;
+                        // Stack vertically: 30px up per card (showing title area)
+                        d.cards[modCardIndex].x = taskCard.x; // No horizontal offset
+                        d.cards[modCardIndex].y = taskCard.y - 30 - (existingChildren * 30);
                     }
                 });
                 await refresh();
@@ -1517,14 +1587,30 @@ export default function BoardPage() {
                     <div className={cardBody}>
                         <div className={cardIcon}>{modIcons[m.type] || "✨"}</div>
                         <div className={cardTitle}>
-                            {m.type.replace("_", " ")}
+                            {m.type.replace(/_/g, " ")}
                         </div>
                         {m.max_charges > 0 && (
                             <div className={cardSubtitle}>
-                                {m.charges}/{m.max_charges} charges
+                                {m.charges}/{m.max_charges} uses
                             </div>
                         )}
                     </div>
+                    {/* Stacklands-style charge indicator bottom-left */}
+                    {m.max_charges > 0 && (
+                        <div style={{
+                            position: "absolute",
+                            bottom: "6px",
+                            left: "6px",
+                            background: "rgba(0, 0, 0, 0.7)",
+                            color: "white",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                        }}>
+                            {m.charges}
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -1683,6 +1769,21 @@ export default function BoardPage() {
             </div>
 
             <div className={deckDisplay}>
+                {/* Collect Deck - for collecting loot */}
+                <div
+                    id="collect-deck"
+                    className={deckCard}
+                    style={{
+                        background: "linear-gradient(135deg, #10b981, #059669)",
+                        cursor: "default"
+                    }}
+                    title="Drag loot cards here to collect them into your inventory"
+                >
+                    <div style={{ fontSize: 24 }}>💰</div>
+                    <div className={deckName}>Collect</div>
+                    <div className={deckCost} style={{ fontSize: 10 }}>Drop Loot</div>
+                </div>
+                
                 {st.decks.filter(d => d.status === "unlocked").map((deck) => (
                     <div
                         key={deck.id}
