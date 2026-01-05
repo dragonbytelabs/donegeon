@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { useViewMode } from "../lib/view";
 import InboxGameView from "../views/inbox-game.view";
 import InboxManagerView from "../views/inbox-manager.view";
+import { GameStateProvider } from "../game/game-state";
+
 
 
 export async function inboxLoader() {
@@ -51,27 +53,35 @@ export async function inboxAction({ request }: { request: Request }) {
         return { ok: true };
     }
 
+    if (intent === "reorder") {
+        const sourceId = Number(fd.get("sourceId"));
+        const targetId = Number(fd.get("targetId"));
+        if (!sourceId || !targetId) throw new Response("sourceId + targetId required", { status: 400 });
+        await api.reorderTask(sourceId, targetId);
+        return { ok: true };
+    }
+
     throw new Response("unknown intent", { status: 400 });
 }
 
 export default function InboxRoute() {
-    const { tasks } = useLoaderData<typeof inboxLoader>()
-    const createFetcher = useFetcher<typeof inboxAction>();
-    const formRef = useRef<HTMLFormElement>(null);
+  const { tasks } = useLoaderData<typeof inboxLoader>();
+  const createFetcher = useFetcher<typeof inboxAction>();
+  const formRef = useRef<HTMLFormElement>(null);
 
-    const { mode } = useViewMode();
+  const { mode } = useViewMode();
 
+  useEffect(() => {
+    if (createFetcher.state === "idle" && createFetcher.data?.ok) {
+      formRef.current?.reset();
+    }
+  }, [createFetcher.state, createFetcher.data]);
 
-    useEffect(() => {
-        if (createFetcher.state === "idle" && createFetcher.data?.ok) {
-            formRef.current?.reset();
-        }
-    }, [createFetcher.state, createFetcher.data]);
-
-
-if (mode === "game") {
-    return <InboxGameView tasks={tasks} />;
-  }
-
-  return <InboxManagerView tasks={tasks} />;
+  return mode === "game" ? (
+<GameStateProvider initialTasks={tasks}>
+  <InboxGameView tasks={tasks} />
+</GameStateProvider>
+  ) : (
+    <InboxManagerView tasks={tasks} />
+  );
 }

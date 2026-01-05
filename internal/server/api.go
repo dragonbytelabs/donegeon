@@ -9,7 +9,10 @@ import (
 	"strconv"
 	"time"
 
+	"donegeon/internal/building"
+	"donegeon/internal/deck"
 	"donegeon/internal/game"
+	"donegeon/internal/loot"
 	"donegeon/internal/modifier"
 	"donegeon/internal/quest"
 	"donegeon/internal/recipe"
@@ -31,6 +34,9 @@ type App struct {
 	ZombieRepo   *zombie.MemoryRepo
 	WorldRepo    *world.MemoryRepo
 	ModifierRepo *modifier.MemoryRepo
+	LootRepo     *loot.MemoryRepo
+	DeckRepo     *deck.MemoryRepo
+	BuildingRepo *building.MemoryRepo
 
 	BootNow time.Time
 }
@@ -88,6 +94,9 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 	zombieRepo := app.ZombieRepo
 	worldRepo := app.WorldRepo
 	modifierRepo := app.ModifierRepo
+	lootRepo := app.LootRepo
+	deckRepo := app.DeckRepo
+	buildingRepo := app.BuildingRepo
 
 	// List tasks
 	Handle(mux, rr, "GET /api/tasks", "List tasks", "", func(w http.ResponseWriter, r *http.Request) {
@@ -154,17 +163,30 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			http.Error(w, "invalid json body", 400)
 			return
 		}
-		t, ok, err := taskRepo.Complete(r.Context(), body.ID)
+
+		result, err := engine.CompleteTask(r.Context(), body.ID)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		if !ok {
-			http.Error(w, "task not found", 404)
+		writeJSON(w, result)
+	})
+
+	Handle(mux, rr, "POST /api/tasks/reorder", "Reorder tasks", `{"source_id":1,"target_id":2}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			SourceID int `json:"source_id"`
+			TargetID int `json:"target_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
 			return
 		}
-		_ = engine.Progress(r.Context())
-		writeJSON(w, t)
+
+		if err := taskRepo.Reorder(r.Context(), body.SourceID, body.TargetID); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
 	})
 
 	Handle(mux, rr, "GET /api/tasks/inbox", "List Inbox tasks", "", func(w http.ResponseWriter, r *http.Request) {
@@ -497,4 +519,159 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			writeJSON(w, tk)
 		},
 	)
+
+	// Board stacking actions
+	Handle(mux, rr, "POST /api/tasks/assign", "Assign task to villager",
+		`{"task_id":1,"villager_id":"v1"}`,
+		func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				TaskID     int    `json:"task_id"`
+				VillagerID string `json:"villager_id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid json body", 400)
+				return
+			}
+
+			// Get villager
+			v, ok, err := villagerRepo.Get(r.Context(), body.VillagerID)
+			if err != nil || !ok {
+				http.Error(w, "villager not found", 404)
+				return
+			}
+
+			// Get task first to determine stamina cost
+			tk, ok, err := taskRepo.Get(r.Context(), body.TaskID)
+			if err != nil || !ok {
+				http.Error(w, "task not found", 404)
+				return
+			}
+
+			// Calculate stamina cost based on task tags
+			staminaCost := 1 // default
+			for _, tag := range tk.Tags {
+				switch tag {
+				case "deep_work":
+					staminaCost = 3
+				case "admin":
+					staminaCost = 1
+				case "quick":
+					staminaCost = 1
+				case "meeting":
+					staminaCost = 2
+				}
+			}
+
+			// Check if villager has enough stamina
+			if v.Stamina < staminaCost {
+				http.Error(w, "villager has insufficient stamina", 400)
+				return
+			}
+
+			// Consume stamina
+			v.Stamina -= staminaCost
+			_, err = villagerRepo.Update(r.Context(), v)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			// Mark task as assigned to this villager
+			tk.AssignedVillager = body.VillagerID
+			if tk.Zone != task.ZoneLive {
+				tk, _, err = taskRepo.Process(r.Context(), body.TaskID)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+			} else {
+				// Update task with assignment
+				_, err = taskRepo.Update(r.Context(), tk)
+				if err != nil {
+					http.Error(w, err.Error(), 500)
+					return
+				}
+			}
+
+			writeJSON(w, tk)
+		},
+	)
+
+	Handle(mux, rr, "POST /api/tasks/modifiers/attach", "Attach modifier card to task",
+		`{"task_id":1,"modifier":{"id":"m_123","type":"deadline_pin"}}`,
+		func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				TaskID   int           `json:"task_id"`
+				Modifier modifier.Card `json:"modifier"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid json body", 400)
+				return
+			}
+
+			res, err := engine.AttachModifier(r.Context(), body.TaskID, body.Modifier)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			writeJSON(w, res)
+		},
+	)
+
+	// Loot / Inventory
+	Handle(mux, rr, "GET /api/loot", "Get loot inventory", "", func(w http.ResponseWriter, r *http.Request) {
+		inv, err := lootRepo.Get(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, inv)
+	})
+
+	// Decks
+	Handle(mux, rr, "GET /api/decks", "List all decks", "", func(w http.ResponseWriter, r *http.Request) {
+		decks, err := deckRepo.List(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, decks)
+	})
+
+	Handle(mux, rr, "POST /api/decks/{id}/open", "Open a deck/pack", "", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		result, err := engine.OpenDeck(r.Context(), id)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, result)
+	})
+
+	// Buildings
+	Handle(mux, rr, "GET /api/buildings", "List all buildings", "", func(w http.ResponseWriter, r *http.Request) {
+		buildings, err := buildingRepo.List(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, buildings)
+	})
+
+	Handle(mux, rr, "POST /api/buildings/construct", "Construct a building", `{"type":"rest_hall"}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Type string `json:"type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+
+		result, err := engine.ConstructBuilding(r.Context(), building.Type(body.Type))
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, result)
+	})
 }

@@ -15,4 +15,5 @@ type Repository interface {
 	ListByZone(ctx context.Context, zone Zone) ([]Task, error)
 
 	Update(ctx context.Context, t Task) (Task, error)
+	Reorder(ctx context.Context, sourceID int, targetID int) error
 }

@@ -6,9 +6,11 @@ export type Task = {
   description: string;
   zone: TaskZone;
   completed: boolean;
+  order: number;
   tags: string[];
   modifier_ids: string[];
   live_at?: string | null;
+  assigned_villager?: string | null;
 };
 
 export type ModifierType =
@@ -52,8 +54,8 @@ export type Recipe = {
 export type Villager = {
   id: string;
   name: string;
-  stamina_per_day: number;
-  slots_remaining: number;
+  max_stamina: number;
+  stamina: number;
   blocked_by_zombie: boolean;
 };
 
@@ -90,4 +92,83 @@ export type ClearZombieResult = {
   villagers_blocked: number;
   slots_available: number;
   slots_remaining: number;
+};
+
+export type LootType =
+  | "coin"
+  | "paper"
+  | "ink"
+  | "gear"
+  | "parts"
+  | "blueprint_shard";
+
+export type LootDrop = {
+  type: LootType;
+  amount: number;
+};
+
+export type Inventory = {
+  coin: number;
+  paper: number;
+  ink: number;
+  gear: number;
+  parts: number;
+  blueprint_shard: number;
+};
+
+export type CompleteTaskResult = {
+  task: Task;
+  loot_drops: LootDrop[];
+};
+
+export type DeckType =
+  | "first_day"
+  | "organization"
+  | "maintenance"
+  | "planning"
+  | "integration";
+
+export type DeckStatus = "locked" | "unlocked";
+
+export type Deck = {
+  id: string;
+  type: DeckType;
+  name: string;
+  description: string;
+  status: DeckStatus;
+  base_cost: number;
+  times_opened: number;
+};
+
+export type CardDrop = {
+  type: string; // "blank_task", "villager", "modifier", "loot"
+  modifier_type?: string;
+  modifier_card?: ModifierCard;
+  loot_type?: string;
+  loot_amount?: number;
+  villager_id?: string;
+};
+
+export type OpenDeckResult = {
+  deck_id: string;
+  drops: CardDrop[];
+  cost_paid: number;
+};
+
+export type BuildingType =
+  | "project_board"
+  | "rest_hall"
+  | "calendar_console"
+  | "routine_farm"
+  | "automation_forge";
+
+export type BuildingStatus = "locked" | "built";
+
+export type Building = {
+  id: string;
+  type: BuildingType;
+  name: string;
+  description: string;
+  effect: string;
+  status: BuildingStatus;
 };

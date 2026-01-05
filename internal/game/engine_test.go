@@ -50,8 +50,8 @@ func newEngineForTest(loc *time.Location) (Engine,
 
 func seedWorldAndVillagers(t *testing.T, ctx context.Context, villRepo *villager.MemoryRepo, worldRepo *world.MemoryRepo, startDay time.Time) {
 	require.NoError(t, villRepo.Seed(ctx, []villager.Villager{
-		{ID: "v1", Name: "Villager 1", StaminaPerDay: 3, SlotsRemaining: 3},
-		{ID: "v2", Name: "Villager 2", StaminaPerDay: 3, SlotsRemaining: 3},
+		{ID: "v1", Name: "Villager 1", MaxStamina: 10, Stamina: 10},
+		{ID: "v2", Name: "Villager 2", MaxStamina: 10, Stamina: 10},
 	}))
 	require.NoError(t, worldRepo.Set(ctx, world.World{Day: startDay}))
 }
@@ -103,7 +103,7 @@ func TestDayTick_DeadlinePin_SpawnsZombieAndBlocksVillager(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vs, 2)
 	assert.True(t, vs[0].BlockedByZombie)
-	assert.Equal(t, 0, vs[0].SlotsRemaining)
+	assert.Equal(t, 0, vs[0].Stamina)
 }
 
 func TestDayTick_RecurringContract_ConsumesCharge_AdvancesNextAt_NoZombie(t *testing.T) {

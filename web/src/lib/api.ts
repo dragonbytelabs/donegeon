@@ -9,6 +9,11 @@ import type {
   DayTickResult,
   ClearZombieResult,
   ModifierType,
+  Inventory,
+  Deck,
+  OpenDeckResult,
+  Building,
+  CompleteTaskResult,
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -44,9 +49,15 @@ export const api = {
     }),
 
   completeTask: (id: number) =>
-    request<Task>("/api/tasks/complete", {
+    request<CompleteTaskResult>("/api/tasks/complete", {
       method: "POST",
       body: JSON.stringify({ id }),
+    }),
+
+  reorderTask: (source_id: number, target_id: number) =>
+    request<{ status: string }>("/api/tasks/reorder", {
+      method: "POST",
+      body: JSON.stringify({ source_id, target_id }),
     }),
 
   processTask: (id: number) =>
@@ -104,5 +115,42 @@ export const api = {
     request<ClearZombieResult>("/api/zombies/clear", {
       method: "POST",
       body: JSON.stringify({ zombie_id, slots }),
+    }),
+
+  // loot
+  loot: () => request<Inventory>("/api/loot"),
+
+  // decks
+  listDecks: () => request<Deck[]>("/api/decks"),
+  openDeck: (deck_id: string) =>
+    request<OpenDeckResult>(`/api/decks/${deck_id}/open`, {
+      method: "POST",
+    }),
+
+  // buildings
+  listBuildings: () => request<Building[]>("/api/buildings"),
+  constructBuilding: (type: string) =>
+    request<Building>("/api/buildings/construct", {
+      method: "POST",
+      body: JSON.stringify({ type }),
+    }),
+
+  // stacking actions
+  assignTask: (task_id: number, villager_id: string) =>
+    request<Task>("/api/tasks/assign", {
+      method: "POST",
+      body: JSON.stringify({ task_id, villager_id }),
+    }),
+
+  attachModifier: (task_id: number, modifier: ModifierCard) =>
+    request<Task>("/api/tasks/modifiers/attach", {
+      method: "POST",
+      body: JSON.stringify({ task_id, modifier }),
+    }),
+
+  executeRecipe: (task_id_1: number, task_id_2: number) =>
+    request<any>("/api/recipes/execute", {
+      method: "POST",
+      body: JSON.stringify({ task_id_1, task_id_2 }),
     }),
 };
