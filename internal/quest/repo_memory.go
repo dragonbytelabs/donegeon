@@ -2,11 +2,10 @@ package quest
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
-
-	"donegeon/internal/task"
 )
 
 type MemoryRepo struct {
@@ -22,20 +21,12 @@ func NewMemoryRepo() *MemoryRepo {
 
 func (r *MemoryRepo) Seed(ctx context.Context, quests []Quest) error {
 	_ = ctx
-
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	now := time.Now()
-
 	for _, q := range quests {
-		// default status
 		if q.Status == "" {
 			q.Status = StatusLocked
-		}
-		// If nothing is unlocked yet, we’ll keep it locked unless caller marks active.
-		if q.Status == StatusActive && q.UnlockedAt == nil {
-			q.UnlockedAt = ptrTime(now)
 		}
 		r.quests[q.ID] = q
 	}
@@ -68,50 +59,99 @@ func (r *MemoryRepo) Get(ctx context.Context, id string) (Quest, bool, error) {
 	return q, ok, nil
 }
 
-func (r *MemoryRepo) Progress(ctx context.Context, tasks []task.Task) ([]Quest, error) {
+func (r *MemoryRepo) ListActive(ctx context.Context) ([]Quest, error) {
 	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
+	var active []Quest
+	for _, q := range r.quests {
+		if q.Status == StatusActive || q.Status == StatusInProgress {
+			active = append(active, q)
+		}
+	}
+
+	return active, nil
+}
+
+func (r *MemoryRepo) ListByType(ctx context.Context, qtype QuestType) ([]Quest, error) {
+	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var filtered []Quest
+	for _, q := range r.quests {
+		if q.Type == qtype {
+			filtered = append(filtered, q)
+		}
+	}
+
+	return filtered, nil
+}
+
+func (r *MemoryRepo) Activate(ctx context.Context, id string) error {
+	_ = ctx
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	q, ok := r.quests[id]
+	if !ok {
+		return fmt.Errorf("quest not found: %s", id)
+	}
+
 	now := time.Now()
+	q.Status = StatusActive
+	q.ActivatedAt = &now
+	r.quests[id] = q
 
-	// 1) Complete any active quests whose requirements are met
-	completedThisTick := []Quest{}
-	for id, q := range r.quests {
-		if q.Status != StatusActive {
-			continue
-		}
-		if q.Evaluate(tasks) {
-			q.Status = StatusComplete
-			q.CompletedAt = ptrTime(now)
-			r.quests[id] = q
-			completedThisTick = append(completedThisTick, q)
+	return nil
+}
+
+func (r *MemoryRepo) Complete(ctx context.Context, id string) error {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	q, ok := r.quests[id]
+	if !ok {
+		return fmt.Errorf("quest not found: %s", id)
+	}
+
+	now := time.Now()
+	q.Status = StatusComplete
+	q.CompletedAt = &now
+	r.quests[id] = q
+
+	return nil
+}
+
+func (r *MemoryRepo) UpdateProgress(ctx context.Context, id string, progress []Progress) error {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	q, ok := r.quests[id]
+	if !ok {
+		return fmt.Errorf("quest not found: %s", id)
+	}
+
+	q.Progress = progress
+
+	// If all objectives complete, mark as in-progress
+	allComplete := true
+	for _, p := range progress {
+		if !p.Complete {
+			allComplete = false
+			break
 		}
 	}
 
-	// 2) Apply rewards (unlock quests)
-	for _, done := range completedThisTick {
-		for _, unlockID := range done.Reward.UnlockQuestIDs {
-			uq, ok := r.quests[unlockID]
-			if !ok {
-				continue
-			}
-			if uq.Status == StatusLocked {
-				uq.Status = StatusActive
-				uq.UnlockedAt = ptrTime(now)
-				r.quests[unlockID] = uq
-			}
-		}
+	if allComplete && q.Status == StatusActive {
+		q.Status = StatusInProgress
 	}
 
-	// return updated snapshot
-	out := make([]Quest, 0, len(r.quests))
-	for _, q := range r.quests {
-		out = append(out, q)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out, nil
+	r.quests[id] = q
+	return nil
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }

@@ -16,4 +16,8 @@ type Repository interface {
 
 	Update(ctx context.Context, t Task) (Task, error)
 	Reorder(ctx context.Context, sourceID int, targetID int) error
+
+	// Quest progress tracking
+	CountCreatedToday(ctx context.Context) (int, error)
+	CountCompletedToday(ctx context.Context) (int, error)
 }

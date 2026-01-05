@@ -2,8 +2,6 @@ package quest
 
 import (
 	"context"
-
-	"donegeon/internal/task"
 )
 
 type Repository interface {
@@ -12,7 +10,10 @@ type Repository interface {
 	List(ctx context.Context) ([]Quest, error)
 	Get(ctx context.Context, id string) (Quest, bool, error)
 
-	// Progress recomputes statuses based on current tasks.
-	// Typically: active quests can complete; rewards unlock locked quests.
-	Progress(ctx context.Context, tasks []task.Task) ([]Quest, error)
+	ListActive(ctx context.Context) ([]Quest, error)
+	ListByType(ctx context.Context, qtype QuestType) ([]Quest, error)
+
+	Activate(ctx context.Context, id string) error
+	Complete(ctx context.Context, id string) error
+	UpdateProgress(ctx context.Context, id string, progress []Progress) error
 }

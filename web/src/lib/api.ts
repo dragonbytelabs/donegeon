@@ -91,8 +91,22 @@ export const api = {
 
   listModifiers: () => request<ModifierCard[]>("/api/modifiers"),
 
-  // quests/recipes
-  listQuests: () => request<Quest[]>("/api/quests"),
+  // quests
+  listQuests: () => request<any[]>("/api/quests"),
+  listActiveQuests: () => request<any[]>("/api/quests/active"),
+  listDailyQuests: () => request<any[]>("/api/quests/daily"),
+  completeQuest: (quest_id: string) =>
+    request<any>(`/api/quests/${quest_id}/complete`, {
+      method: "POST",
+      body: "{}",
+    }),
+  refreshQuests: () =>
+    request<any>("/api/quests/refresh", {
+      method: "POST",
+      body: "{}",
+    }),
+  
+  // recipes
   listRecipes: () => request<Recipe[]>("/api/recipes"),
   craft: (recipe_id: string) =>
     request<any>("/api/recipes/craft", {
