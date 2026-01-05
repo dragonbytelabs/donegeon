@@ -37,6 +37,15 @@ export type ModifierCard = {
   recurring_next_at?: string | null;
 };
 
+export type ResourceCard = {
+  resource_type: string;
+  charges: number;
+  max_charges: number;
+  gather_time: number; // seconds to gather one unit
+  produces: string; // food_type produced
+  stamina_restore: number; // stamina restored by food
+};
+
 export type Quest = {
   id: string;
   title: string;
@@ -147,6 +156,7 @@ export type CardDrop = {
   loot_type?: string;
   loot_amount?: number;
   villager_id?: string;
+  resource_card?: ResourceCard;
 };
 
 export type OpenDeckResult = {
