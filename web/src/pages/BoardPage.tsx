@@ -463,11 +463,14 @@ const deckCost = css`
 
 type CardEntity = {
     id: string;
-    type: "villager" | "task" | "zombie" | "loot" | "modifier" | "building";
+    type: "villager" | "task" | "zombie" | "loot" | "modifier" | "building" | "resource" | "food";
     x: number;
     y: number;
     data: any;
     parentId?: string; // Card this is stacked on
+    // Resource gathering state
+    gatherProgress?: number; // 0-1, progress of current gather
+    gatherStartTime?: number; // timestamp when gathering started
 };
 
 type State = {
@@ -547,8 +550,8 @@ export default function BoardPage() {
                 x: c.x,
                 y: c.y,
                 parentId: c.parentId,
-                // Save full data for modifier and loot cards since they're not reloaded from backend
-                data: (c.type === 'modifier' || c.type === 'loot') ? c.data : undefined
+                // Save full data for modifier, loot, resource, and food cards since they're not reloaded from backend
+                data: (c.type === 'modifier' || c.type === 'loot' || c.type === 'resource' || c.type === 'food') ? c.data : undefined
             }));
             localStorage.setItem("boardState", JSON.stringify({ cards: positions }));
             console.log("Saved board state to localStorage:", positions.length, "cards");
@@ -732,15 +735,15 @@ export default function BoardPage() {
                         return true;
                     });
 
-                    // Restore modifier and loot cards from localStorage if they're missing
+                    // Restore modifier, loot, resource, and food cards from localStorage if they're missing
                     const savedPositions = loadSavedPositions();
                     for (const [cardId, savedData] of savedPositions.entries()) {
-                        // Check if this is a modifier or loot card that's not in the current cards
-                        if (cardId.startsWith('drop-') && !d.cards.some(c => c.id === cardId) && savedData.data) {
+                        // Check if this is a card from deck drops that's not in the current cards
+                        if ((cardId.startsWith('drop-') || cardId.startsWith('food-')) && !d.cards.some(c => c.id === cardId) && savedData.data) {
                             console.log('Restoring saved card from localStorage:', cardId, savedData.data);
 
                             // Determine card type from saved data
-                            let cardType: 'modifier' | 'loot' | 'task' | null = null;
+                            let cardType: 'modifier' | 'loot' | 'task' | 'resource' | 'food' | null = null;
                             let cardData = savedData.data;
 
                             // Handle different data structures
@@ -756,6 +759,10 @@ export default function BoardPage() {
                                 cardType = 'loot';
                             } else if (savedData.data.type === 'blank_task') {
                                 cardType = 'task';
+                            } else if (savedData.data.resource_type) {
+                                cardType = 'resource';
+                            } else if (savedData.data.food_type) {
+                                cardType = 'food';
                             }
 
                             if (cardType) {
@@ -782,6 +789,74 @@ export default function BoardPage() {
 
     useEffect(() => {
         void refresh();
+    }, []);
+
+    // Gathering game loop - update progress and spawn food
+    useEffect(() => {
+        const interval = setInterval(() => {
+            update((d) => {
+                const now = Date.now();
+                
+                d.cards.forEach((resourceCard) => {
+                    if (resourceCard.type !== "resource") return;
+                    if (!resourceCard.gatherStartTime) return;
+                    
+                    const resData = resourceCard.data as { resource_type: string; charges: number; gather_time: number; produces: string; stamina_restore: number };
+                    const elapsed = now - resourceCard.gatherStartTime;
+                    const progress = Math.min(1, elapsed / (resData.gather_time * 1000));
+                    
+                    resourceCard.gatherProgress = progress;
+                    
+                    // If complete, spawn food
+                    if (progress >= 1) {
+                        console.log(`Gathering complete! Spawning ${resData.produces}`);
+                        
+                        // Decrement resource charges
+                        resData.charges = Math.max(0, resData.charges - 1);
+                        
+                        // Find the villager on this resource
+                        const villager = d.cards.find(c => c.parentId === resourceCard.id && c.type === "villager");
+                        
+                        if (villager) {
+                            // Spawn food card
+                            const foodId = `food-${Date.now()}`;
+                            d.cards.push({
+                                id: foodId,
+                                type: "food",
+                                x: resourceCard.x + 140,
+                                y: resourceCard.y,
+                                data: {
+                                    food_type: resData.produces,
+                                    stamina_restore: resData.stamina_restore,
+                                },
+                            });
+                            
+                            // Check if resource has more charges
+                            if (resData.charges > 0) {
+                                // Resource still has charges - restart gathering immediately
+                                resourceCard.gatherStartTime = Date.now();
+                                resourceCard.gatherProgress = 0;
+                                console.log(`${resData.resource_type} has ${resData.charges} charges left, continuing gathering`);
+                            } else {
+                                // Resource depleted - unparent villager and remove resource
+                                villager.parentId = undefined;
+                                resourceCard.gatherStartTime = undefined;
+                                resourceCard.gatherProgress = 0;
+                                
+                                d.cards = d.cards.filter(c => c.id !== resourceCard.id);
+                                d.error = `✓ ${resData.resource_type.replace(/_/g, " ")} depleted`;
+                                setTimeout(() => update((d) => { d.error = null; }), 2000);
+                            }
+                        }
+                    }
+                });
+                
+                // Save board state after updates
+                saveBoardState(d.cards);
+            });
+        }, 100);
+        
+        return () => clearInterval(interval);
     }, []);
 
     // Camera drag
@@ -1243,6 +1318,81 @@ export default function BoardPage() {
                 }
             }
 
+            // Food + Villager = Restore stamina (either direction)
+            else if ((draggedCard.type === "food" && targetCard.type === "villager") ||
+                (draggedCard.type === "villager" && targetCard.type === "food")) {
+
+                const food = draggedCard.type === "food" ? draggedCard : targetCard;
+                const foodData = food.data as { food_type: string; stamina_restore: number };
+                const villager = draggedCard.type === "villager" ? draggedCard.data as Villager : targetCard.data as Villager;
+
+                console.log(`${villager.name} eating ${foodData.food_type}`);
+
+                update((d) => {
+                    const villagerCard = d.cards.find(c => c.id === `villager-${villager.id}`);
+                    if (villagerCard) {
+                        const v = villagerCard.data as Villager;
+                        const oldStamina = v.stamina;
+                        v.stamina = Math.min(v.max_stamina, v.stamina + foodData.stamina_restore);
+                        const gained = v.stamina - oldStamina;
+                        
+                        // Remove food card
+                        d.cards = d.cards.filter(c => c.id !== food.id);
+                        
+                        d.error = `✓ ${villager.name} ate ${foodData.food_type} (+${gained} stamina)`;
+                        setTimeout(() => update((d) => { d.error = null; }), 2000);
+                    }
+                });
+            }
+
+            // Villager + Resource = Start gathering (either direction)
+            else if ((draggedCard.type === "villager" && targetCard.type === "resource") ||
+                (draggedCard.type === "resource" && targetCard.type === "villager")) {
+
+                const resource = draggedCard.type === "resource" ? draggedCard : targetCard;
+                const resData = resource.data as { resource_type: string; charges: number; gather_time: number };
+                const villager = draggedCard.type === "villager" ? draggedCard.data as Villager : targetCard.data as Villager;
+
+                console.log(`${villager.name} gathering from ${resData.resource_type}`);
+
+                // Check if resource has charges left
+                if (resData.charges <= 0) {
+                    update((d) => {
+                        d.error = `✗ ${resData.resource_type.replace(/_/g, " ")} is depleted`;
+                        setTimeout(() => update((d) => { d.error = null; }), 2000);
+                    });
+                    return;
+                }
+
+                // Check if villager has stamina
+                if (villager.stamina <= 0) {
+                    update((d) => {
+                        d.error = `✗ ${villager.name} has no stamina to gather`;
+                        setTimeout(() => update((d) => { d.error = null; }), 2000);
+                    });
+                    return;
+                }
+
+                // Stack villager on resource and start gathering timer
+                update((d) => {
+                    const villagerCard = d.cards.find(c => c.id === `villager-${villager.id}`);
+                    const resourceCard = d.cards.find(c => c.id === resource.id);
+                    
+                    if (villagerCard && resourceCard) {
+                        villagerCard.parentId = resourceCard.id;
+                        villagerCard.x = resourceCard.x;
+                        villagerCard.y = resourceCard.y - 30;
+                        
+                        // Start gathering progress
+                        resourceCard.gatherStartTime = Date.now();
+                        resourceCard.gatherProgress = 0;
+                        
+                        d.error = `✓ ${villager.name} gathering from ${resData.resource_type.replace(/_/g, " ")}`;
+                        setTimeout(() => update((d) => { d.error = null; }), 2000);
+                    }
+                });
+            }
+
             // Loot + Villager = Consume loot for stamina boost (either direction)
             else if ((draggedCard.type === "loot" && targetCard.type === "villager") ||
                 (draggedCard.type === "villager" && targetCard.type === "loot")) {
@@ -1321,6 +1471,14 @@ export default function BoardPage() {
                             x: x + i * 140,
                             y: y,
                             data: drop.modifier_card,
+                        });
+                    } else if (drop.type === "resource" && drop.resource_card) {
+                        d.cards.push({
+                            id: cardId,
+                            type: "resource",
+                            x: x + i * 140,
+                            y: y,
+                            data: drop.resource_card,
                         });
                     } else if (drop.type === "blank_task") {
                         d.cards.push({
@@ -1563,6 +1721,98 @@ export default function BoardPage() {
                             {c.data.loot_type?.replace("_", " ")}
                         </div>
                         <div className={cardSubtitle}>×{c.data.loot_amount}</div>
+                    </div>
+                </div>
+            );
+        }
+
+        if (c.type === "food") {
+            const foodData = c.data as { food_type: string; stamina_restore: number };
+            const foodIcons: Record<string, string> = {
+                berries: "🫐",
+                mushroom: "🍄",
+                bread: "🍞",
+            };
+
+            return (
+                <div
+                    className={card}
+                    style={{ ...style, background: "linear-gradient(180deg, #dcfce7, #bbf7d0)" }}
+                    onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                >
+                    <div className={cardHeader}>Food</div>
+                    <div className={cardBody}>
+                        <div className={cardIcon}>{foodIcons[foodData.food_type] || "🍽"}</div>
+                        <div className={cardTitle}>
+                            {foodData.food_type.replace(/_/g, " ")}
+                        </div>
+                        <div className={cardSubtitle} style={{ color: "#10b981", fontWeight: 700 }}>
+                            +{foodData.stamina_restore} ⚡
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        if (c.type === "resource") {
+            const resData = c.data as { resource_type: string; charges: number; max_charges: number; gather_time: number; produces: string };
+            const resourceIcons: Record<string, string> = {
+                berry_bush: "🌿",
+                mushroom_patch: "🍄",
+            };
+            
+            const hasVillager = st.cards.some(card => card.parentId === c.id && card.type === "villager");
+            const gatherProgress = c.gatherProgress || 0;
+
+            return (
+                <div
+                    className={card}
+                    style={{ ...style, background: "linear-gradient(180deg, #d1fae5, #a7f3d0)" }}
+                    onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                >
+                    {/* Gather progress bar at top */}
+                    {hasVillager && (
+                        <div style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: "4px",
+                            background: "rgba(0, 0, 0, 0.2)",
+                            borderRadius: "12px 12px 0 0",
+                            overflow: "hidden",
+                        }}>
+                            <div style={{
+                                height: "100%",
+                                width: `${gatherProgress * 100}%`,
+                                background: "linear-gradient(90deg, #10b981, #059669)",
+                                transition: "width 0.1s linear",
+                            }} />
+                        </div>
+                    )}
+                    <div className={cardHeader}>Resource</div>
+                    <div className={cardBody}>
+                        <div className={cardIcon}>{resourceIcons[resData.resource_type] || "🌾"}</div>
+                        <div className={cardTitle}>
+                            {resData.resource_type.replace(/_/g, " ")}
+                        </div>
+                        <div className={cardSubtitle}>
+                            {hasVillager ? "Gathering..." : "Ready"}
+                        </div>
+                    </div>
+                    {/* Stacklands-style charge indicator bottom-left */}
+                    <div style={{
+                        position: "absolute",
+                        bottom: "6px",
+                        left: "6px",
+                        background: "rgba(0, 0, 0, 0.7)",
+                        color: "white",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                    }}>
+                        {resData.charges}
                     </div>
                 </div>
             );

@@ -42,6 +42,16 @@ type CardDrop struct {
 	LootType     string         `json:"loot_type,omitempty"`
 	LootAmount   int            `json:"loot_amount,omitempty"`
 	VillagerID   string         `json:"villager_id,omitempty"`
+	ResourceCard *ResourceCard  `json:"resource_card,omitempty"`
+}
+
+type ResourceCard struct {
+	ResourceType   string `json:"resource_type"`
+	Charges        int    `json:"charges"`
+	MaxCharges     int    `json:"max_charges"`
+	GatherTime     int    `json:"gather_time"`     // seconds to gather one unit
+	Produces       string `json:"produces"`        // food_type produced
+	StaminaRestore int    `json:"stamina_restore"` // stamina restored by food
 }
 
 type OpenResult struct {
@@ -59,12 +69,17 @@ type Definition struct {
 }
 
 type ContentEntry struct {
-	Type            string
-	Weight          int
-	ModifierType    modifier.Type
-	ModifierCharges int
-	LootType        loot.Type
-	LootAmount      int
+	Type                   string
+	Weight                 int
+	ModifierType           modifier.Type
+	ModifierCharges        int
+	LootType               loot.Type
+	LootAmount             int
+	ResourceType           string
+	ResourceCharges        int
+	ResourceGatherTime     int
+	ResourceProduces       string
+	ResourceStaminaRestore int
 }
 
 var Definitions = map[Type]Definition{
@@ -74,11 +89,13 @@ var Definitions = map[Type]Definition{
 		Description: "Bootstrap deck",
 		BaseCost:    0,
 		Contents: []ContentEntry{
-			{Type: "blank_task", Weight: 40},
 			{Type: "blank_task", Weight: 30},
+			{Type: "blank_task", Weight: 20},
 			{Type: "loot", Weight: 15, LootType: loot.Coin, LootAmount: 2},
 			{Type: "loot", Weight: 10, LootType: loot.Paper, LootAmount: 1},
-			{Type: "loot", Weight: 4, LootType: loot.Ink, LootAmount: 1},
+			{Type: "loot", Weight: 5, LootType: loot.Ink, LootAmount: 1},
+			{Type: "resource", Weight: 15, ResourceType: "berry_bush", ResourceCharges: 3, ResourceGatherTime: 3, ResourceProduces: "berries", ResourceStaminaRestore: 1},
+			{Type: "resource", Weight: 4, ResourceType: "mushroom_patch", ResourceCharges: 2, ResourceGatherTime: 4, ResourceProduces: "mushroom", ResourceStaminaRestore: 2},
 			{Type: "modifier", Weight: 1, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
 		},
 	},
@@ -169,6 +186,15 @@ func (d *Definition) Open() []CardDrop {
 						Charges:    entry.ModifierCharges,
 						Status:     modifier.StatusActive,
 						CreatedAt:  time.Now(),
+					}
+				case "resource":
+					drop.ResourceCard = &ResourceCard{
+						ResourceType:   entry.ResourceType,
+						Charges:        entry.ResourceCharges,
+						MaxCharges:     entry.ResourceCharges,
+						GatherTime:     entry.ResourceGatherTime,
+						Produces:       entry.ResourceProduces,
+						StaminaRestore: entry.ResourceStaminaRestore,
 					}
 				case "loot":
 					drop.LootType = string(entry.LootType)
