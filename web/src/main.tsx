@@ -5,8 +5,10 @@ import { RouterProvider } from "react-router/dom";
 import RootLayout from "./routes/root-layout";
 import InboxRoute, { inboxLoader, inboxAction } from "./routes/inbox.route";
 import ProjectRoute, { projectLoader, projectAction } from "./routes/project.route";
-
-
+import CompletedRoute, { completedLoader } from "./routes/completed.route";
+import BoardPage from "./pages/BoardPage";
+import LivePage from "./pages/LivePage";
+import WorldPage from "./pages/WorldPage";
 
 const router = createBrowserRouter([
   {
@@ -24,6 +26,23 @@ const router = createBrowserRouter([
         loader: projectLoader,
         action: projectAction,
         Component: ProjectRoute,
+      },
+      {
+        path: "completed",
+        loader: completedLoader,
+        Component: CompletedRoute,
+      },
+      {
+        path: "live",
+        Component: LivePage,
+      },
+      {
+        path: "world",
+        Component: WorldPage,
+      },
+      {
+        path: "board",
+        Component: BoardPage,
       },
     ],
   },

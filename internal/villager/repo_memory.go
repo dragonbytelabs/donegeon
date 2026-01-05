@@ -38,6 +38,24 @@ func (r *MemoryRepo) List(ctx context.Context) ([]Villager, error) {
 	return out, nil
 }
 
+func (r *MemoryRepo) Get(ctx context.Context, id string) (Villager, bool, error) {
+	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	v, ok := r.m[id]
+	return v, ok, nil
+}
+
+func (r *MemoryRepo) Update(ctx context.Context, v Villager) (Villager, error) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.m[v.ID] = v
+	return v, nil
+}
+
 func (r *MemoryRepo) UpdateMany(ctx context.Context, vs []Villager) error {
 	_ = ctx
 	r.mu.Lock()

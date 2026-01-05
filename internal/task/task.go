@@ -22,6 +22,7 @@ type Task struct {
 	Tags        []string   `json:"tags,omitempty"`
 	Completed   bool       `json:"completed"`
 	Zone        Zone       `json:"zone"`
+	Order       int        `json:"order"` // Order within zone for manual sorting
 	LiveAt      *time.Time `json:"live_at,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
@@ -32,7 +33,8 @@ type Task struct {
 	RecurringCharges   int        `json:"recurring_charges,omitempty"`
 	RecurringNextAt    *time.Time `json:"recurring_next_at,omitempty"`
 
-	ModifierIDs []string `json:"modifier_ids,omitempty"`
+	ModifierIDs      []string `json:"modifier_ids,omitempty"`
+	AssignedVillager string   `json:"assigned_villager,omitempty"` // Villager ID assigned to this task
 }
 
 func getNextId() int {

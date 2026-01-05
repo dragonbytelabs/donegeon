@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"donegeon/internal/building"
+	"donegeon/internal/deck"
+	"donegeon/internal/loot"
 	"donegeon/internal/modifier"
 	"donegeon/internal/quest"
 	"donegeon/internal/recipe"
@@ -23,6 +26,9 @@ type Engine struct {
 	Villagers villager.Repository
 	Zombies   zombie.Repository
 	World     *world.MemoryRepo
+	Loot      loot.Repository
+	Decks     deck.Repository
+	Buildings building.Repository
 	Clock     Clock
 }
 
@@ -412,11 +418,11 @@ func (e Engine) Craft(ctx context.Context, recipeID string) (CraftResult, error)
 type ClearZombieResult struct {
 	ZombieID         string `json:"zombie_id"`
 	UsedVillager     string `json:"used_villager"`
-	SlotsSpent       int    `json:"slots_spent"`
+	StaminaSpent     int    `json:"stamina_spent"`
 	ZombiesTotal     int    `json:"zombies_total"`
 	VillagersBlocked int    `json:"villagers_blocked"`
-	SlotsAvailable   int    `json:"slots_available"`
-	SlotsRemaining   int    `json:"slots_remaining"`
+	StaminaAvailable int    `json:"stamina_available"`
+	StaminaRemaining int    `json:"stamina_remaining"`
 }
 
 func (e Engine) ClearZombie(ctx context.Context, zombieID string, slots int) (ClearZombieResult, error) {
@@ -438,17 +444,17 @@ func (e Engine) ClearZombie(ctx context.Context, zombieID string, slots int) (Cl
 		if vs[i].BlockedByZombie {
 			continue
 		}
-		if vs[i].SlotsRemaining >= slots {
+		if vs[i].Stamina >= slots {
 			vidx = i
 			break
 		}
 	}
 	if vidx == -1 {
-		return ClearZombieResult{}, errors.New("no available villager with enough slots")
+		return ClearZombieResult{}, errors.New("no available villager with enough stamina")
 	}
 
-	// Spend slots
-	vs[vidx].SlotsRemaining -= slots
+	// Spend stamina
+	vs[vidx].Stamina -= slots
 
 	// Remove zombie
 	ok, err := e.Zombies.Remove(ctx, zombieID)
@@ -477,11 +483,11 @@ func (e Engine) ClearZombie(ctx context.Context, zombieID string, slots int) (Cl
 	return ClearZombieResult{
 		ZombieID:         zombieID,
 		UsedVillager:     vs[vidx].ID,
-		SlotsSpent:       slots,
+		StaminaSpent:     slots,
 		ZombiesTotal:     zTotal,
 		VillagersBlocked: blocked,
-		SlotsAvailable:   slotsAvail,
-		SlotsRemaining:   vs[vidx].SlotsRemaining,
+		StaminaAvailable: slotsAvail,
+		StaminaRemaining: vs[vidx].Stamina,
 	}, nil
 }
 
@@ -505,19 +511,19 @@ func (e Engine) recalcBlocking(ctx context.Context) (villagersBlocked int, slots
 	// Unblock everyone first (do NOT reset stamina here)
 	for i := range vs {
 		vs[i].BlockedByZombie = false
-		// Don't modify SlotsRemaining for unblocked villagers (they keep current remaining slots).
+		// Keep their current stamina
 	}
 
 	// Block the first `block` villagers (stable order from repo)
 	for i := 0; i < block; i++ {
 		vs[i].BlockedByZombie = true
-		vs[i].SlotsRemaining = 0
+		vs[i].Stamina = 0
 	}
 
-	// Compute available slots
+	// Compute available stamina
 	slots := 0
 	for _, v := range vs {
-		slots += v.SlotsRemaining
+		slots += v.Stamina
 	}
 
 	if err := e.Villagers.UpdateMany(ctx, vs); err != nil {
@@ -627,4 +633,232 @@ func endOfDay(t time.Time) time.Time {
 	y, m, d := t.Date()
 	loc := t.Location()
 	return time.Date(y, m, d, 23, 59, 0, 0, loc)
+}
+
+type CompleteTaskResult struct {
+	Task      task.Task   `json:"task"`
+	LootDrops []loot.Drop `json:"loot_drops"`
+}
+
+// CompleteTask marks a task complete and generates loot drops
+func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResult, error) {
+	t, ok, err := e.Tasks.Get(ctx, taskID)
+	if err != nil {
+		return CompleteTaskResult{}, err
+	}
+	if !ok {
+		return CompleteTaskResult{}, fmt.Errorf("task not found: %d", taskID)
+	}
+
+	// Mark complete
+	t.MarkComplete()
+	_, err = e.Tasks.Update(ctx, t)
+	if err != nil {
+		return CompleteTaskResult{}, err
+	}
+
+	// Generate loot drops based on task type
+	var drops []loot.Drop
+	if t.Zone == task.ZoneLive {
+		// Get loot table based on inferred task type
+		var table loot.Table
+		switch t.InferType() {
+		case task.TaskTypeAdmin:
+			table = loot.AdminTable
+		case task.TaskTypeMaintenance:
+			table = loot.MaintenanceTable
+		case task.TaskTypePlanning:
+			table = loot.PlanningTable
+		case task.TaskTypeDeepWork:
+			table = loot.DeepWorkTable
+		case task.TaskTypePerpetualFlow:
+			table = loot.PerpetualFlowTable
+		case task.TaskTypeCleanup:
+			table = loot.CleanupTable
+		default:
+			table = loot.AdminTable
+		}
+
+		drops = table.Roll()
+
+		// Apply zombie penalty
+		w, err := e.World.Get(ctx)
+		if err == nil && w.LootPenaltyPct > 0 {
+			drops = loot.ApplyPenalty(drops, w.LootPenaltyPct)
+		}
+
+		// Add loot to inventory
+		if len(drops) > 0 {
+			inv, err := e.Loot.Get(ctx)
+			if err == nil {
+				inv.Add(drops)
+				_ = e.Loot.Update(ctx, inv)
+			}
+		}
+	}
+
+	// Progress quests
+	_ = e.Progress(ctx)
+
+	return CompleteTaskResult{
+		Task:      t,
+		LootDrops: drops,
+	}, nil
+}
+
+// OpenDeck opens a deck/pack and returns the drops
+func (e Engine) OpenDeck(ctx context.Context, deckID string) (deck.OpenResult, error) {
+	// Get deck
+	d, ok, err := e.Decks.Get(ctx, deckID)
+	if err != nil {
+		return deck.OpenResult{}, err
+	}
+	if !ok {
+		return deck.OpenResult{}, fmt.Errorf("deck not found: %s", deckID)
+	}
+
+	// Check if unlocked
+	if d.Status != deck.StatusUnlocked {
+		return deck.OpenResult{}, errors.New("deck is locked")
+	}
+
+	// Get world state for pack cost penalty
+	w, err := e.World.Get(ctx)
+	if err != nil {
+		return deck.OpenResult{}, err
+	}
+
+	// Calculate cost
+	cost := d.GetCost(w.PackCostPct)
+
+	// Check and spend coins
+	inv, err := e.Loot.Get(ctx)
+	if err != nil {
+		return deck.OpenResult{}, err
+	}
+
+	if !inv.Has(loot.Coin, cost) {
+		return deck.OpenResult{}, fmt.Errorf("insufficient coins: need %d, have %d", cost, inv.Coin)
+	}
+
+	if !inv.Spend(loot.Coin, cost) {
+		return deck.OpenResult{}, errors.New("failed to spend coins")
+	}
+
+	// Update inventory
+	if err := e.Loot.Update(ctx, inv); err != nil {
+		return deck.OpenResult{}, err
+	}
+
+	// Get deck definition and open it
+	def, ok := deck.Definitions[d.Type]
+	if !ok {
+		return deck.OpenResult{}, fmt.Errorf("unknown deck type: %s", d.Type)
+	}
+
+	drops := def.Open()
+
+	// Process drops into inventory/state
+	for _, drop := range drops {
+		switch drop.Type {
+		case "loot":
+			lootType := loot.Type(drop.LootType)
+			inv.Add([]loot.Drop{{Type: lootType, Amount: drop.LootAmount}})
+		case "modifier":
+			// Modifiers go into a pool to be attached later
+			// For now, we just track them in the drop result
+		case "blank_task":
+			// Blank task cards are tracked separately
+		case "villager":
+			// Would create a new villager (future)
+		}
+	}
+
+	// Save updated inventory
+	if err := e.Loot.Update(ctx, inv); err != nil {
+		return deck.OpenResult{}, err
+	}
+
+	// Increment times opened
+	d.TimesOpened++
+	if err := e.Decks.Update(ctx, d); err != nil {
+		return deck.OpenResult{}, err
+	}
+
+	return deck.OpenResult{
+		DeckID:   deckID,
+		Drops:    drops,
+		CostPaid: cost,
+	}, nil
+}
+
+// ConstructBuilding builds a building if materials are available
+func (e Engine) ConstructBuilding(ctx context.Context, buildingType building.Type) (building.Building, error) {
+	// Get building
+	b, ok, err := e.Buildings.GetByType(ctx, buildingType)
+	if err != nil {
+		return building.Building{}, err
+	}
+	if !ok {
+		return building.Building{}, fmt.Errorf("building not found: %s", buildingType)
+	}
+
+	// Check if already built
+	if b.Status == building.StatusBuilt {
+		return building.Building{}, errors.New("building already constructed")
+	}
+
+	// Get recipe
+	recipe, ok := building.Recipes[buildingType]
+	if !ok {
+		return building.Building{}, fmt.Errorf("no recipe for building: %s", buildingType)
+	}
+
+	// Get inventory
+	inv, err := e.Loot.Get(ctx)
+	if err != nil {
+		return building.Building{}, err
+	}
+
+	// Check if can build
+	if !recipe.CanBuild(inv) {
+		return building.Building{}, errors.New("insufficient materials")
+	}
+
+	// Spend materials
+	if !recipe.SpendCost(&inv) {
+		return building.Building{}, errors.New("failed to spend materials")
+	}
+
+	// Update inventory
+	if err := e.Loot.Update(ctx, inv); err != nil {
+		return building.Building{}, err
+	}
+
+	// Mark building as built
+	if err := e.Buildings.Build(ctx, buildingType); err != nil {
+		return building.Building{}, err
+	}
+
+	// Get updated building
+	b, ok, err = e.Buildings.GetByType(ctx, buildingType)
+	if err != nil {
+		return building.Building{}, err
+	}
+
+	// Apply building effects
+	switch buildingType {
+	case building.TypeRestHall:
+		// Give all villagers +1 max stamina
+		vs, err := e.Villagers.List(ctx)
+		if err == nil {
+			for i := range vs {
+				vs[i].MaxStamina++
+				vs[i].Stamina++ // Also restore 1 stamina immediately
+			}
+			_ = e.Villagers.UpdateMany(ctx, vs)
+		}
+	}
+
+	return b, nil
 }
