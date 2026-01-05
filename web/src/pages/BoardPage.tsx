@@ -18,17 +18,14 @@ import type {
 const board = css`
   position: fixed;
   inset: 0;
-  background: 
-    radial-gradient(circle at 20% 30%, rgba(120, 150, 100, 0.3), transparent 50%),
-    radial-gradient(circle at 80% 70%, rgba(100, 130, 90, 0.2), transparent 50%),
-    linear-gradient(180deg, #8b9f7f 0%, #7a8f6f 100%);
+  background-image: url("/background.png");
+  background-size: cover;
+  background-position: center;
   overflow: hidden;
   cursor: grab;
   user-select: none;
 
-  &:active {
-    cursor: grabbing;
-  }
+  &:active { cursor: grabbing; }
 `;
 
 const boardCanvas = css`
