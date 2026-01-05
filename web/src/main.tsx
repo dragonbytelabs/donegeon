@@ -9,6 +9,7 @@ import CompletedRoute, { completedLoader } from "./routes/completed.route";
 import BoardPage from "./pages/BoardPage";
 import LivePage from "./pages/LivePage";
 import WorldPage from "./pages/WorldPage";
+import QuestsPage from "./pages/QuestsPage";
 
 const router = createBrowserRouter([
   {
@@ -31,6 +32,10 @@ const router = createBrowserRouter([
         path: "completed",
         loader: completedLoader,
         Component: CompletedRoute,
+      },
+      {
+        path: "quests",
+        Component: QuestsPage,
       },
       {
         path: "live",

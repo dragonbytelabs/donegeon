@@ -13,6 +13,7 @@ export default function RootLayout() {
     <div>
       <nav style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <Link to="/">Inbox</Link>
+        <Link to="/quests">Quests</Link>
         <Link to="/live">Live</Link>
         <Link to="/world">World</Link>
         <Link 

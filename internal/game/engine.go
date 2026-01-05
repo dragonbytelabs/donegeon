@@ -199,24 +199,9 @@ func min(a, b int) int {
 }
 
 func (e Engine) Progress(ctx context.Context) error {
-	tasksNow, err := e.Tasks.ListByZone(ctx, task.ZoneLive)
-	if err != nil {
-		return err
-	}
-
-	qs, err := e.Quests.Progress(ctx, tasksNow)
-	if err != nil {
-		return err
-	}
-
-	for _, q := range qs {
-		if q.Status != quest.StatusComplete {
-			continue
-		}
-		for _, rid := range q.Reward.UnlockRecipeIDs {
-			_, _, _ = e.Recipes.Unlock(ctx, rid) // ignore missing for now
-		}
-	}
+	// TODO: Integrate new quest progress system
+	// The new quest system tracks progress through Objectives and Progress arrays
+	// instead of the old Progress(tasks) method
 	return nil
 }
 

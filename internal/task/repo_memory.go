@@ -285,3 +285,39 @@ func (r *MemoryRepo) Reorder(ctx context.Context, sourceID int, targetID int) er
 
 	return nil
 }
+
+// CountCreatedToday counts tasks created today
+func (r *MemoryRepo) CountCreatedToday(ctx context.Context) (int, error) {
+	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	count := 0
+	for _, t := range r.tasks {
+		if t.CreatedAt.After(startOfDay) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// CountCompletedToday counts tasks completed today
+func (r *MemoryRepo) CountCompletedToday(ctx context.Context) (int, error) {
+	_ = ctx
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	count := 0
+	for _, t := range r.tasks {
+		if t.Completed && t.UpdatedAt.After(startOfDay) {
+			count++
+		}
+	}
+	return count, nil
+}

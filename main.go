@@ -121,30 +121,14 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 			},
 		},
 	})
-	_ = questRepo.Seed(ctx, []quest.Quest{
-		{
-			ID:           "q_intro",
-			Title:        "First Steps",
-			Description:  "Create your first task.",
-			Status:       quest.StatusActive,
-			Requirements: []quest.Requirement{{Type: quest.ReqTaskCount, Count: 1}},
-			Reward: quest.Reward{
-				UnlockQuestIDs:  []string{"q_eggs"},
-				UnlockRecipeIDs: []string{"r_make_omelet"},
-			},
-		},
-		{
-			ID:           "q_eggs",
-			Title:        "Egg Run",
-			Description:  "Have a task named 'pick up eggs'.",
-			Status:       quest.StatusLocked,
-			Requirements: []quest.Requirement{{Type: quest.ReqTaskNamed, Name: "pick up eggs"}},
-			Reward: quest.Reward{
-				UnlockRecipeIDs: []string{"r_buy_clippers"},
-			},
-		},
-	})
 
+	// Seed quest system with Week 1 content
+	_ = questRepo.Seed(ctx, quest.SeedQuests())
+	// Activate the first story quest
+	_ = questRepo.Activate(ctx, "W01_Awakening")
+	// Initialize quest service with repo-based evaluator
+	questEvaluator := quest.NewRepoBasedEvaluator(taskRepo)
+	questService := quest.NewService(questRepo, questEvaluator)
 	// Seed “real” recipes
 	_ = recipeRepo.Seed(ctx, []recipe.Recipe{
 		{
@@ -225,6 +209,7 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 		Engine:       engine,
 		TaskRepo:     taskRepo,
 		QuestRepo:    questRepo,
+		QuestService: questService,
 		RecipeRepo:   recipeRepo,
 		VillagerRepo: villagerRepo,
 		ZombieRepo:   zombieRepo,

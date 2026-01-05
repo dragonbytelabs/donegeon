@@ -29,6 +29,7 @@ type App struct {
 	Engine       game.Engine
 	TaskRepo     *task.MemoryRepo
 	QuestRepo    *quest.MemoryRepo
+	QuestService *quest.Service
 	RecipeRepo   *recipe.MemoryRepo
 	VillagerRepo *villager.MemoryRepo
 	ZombieRepo   *zombie.MemoryRepo
@@ -130,6 +131,12 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		}
 
 		_ = engine.Progress(r.Context())
+
+		// Update quest progress after creating task
+		if app.QuestService != nil {
+			_ = app.QuestService.RefreshProgress(r.Context())
+		}
+
 		writeJSON(w, t)
 	})
 
@@ -169,6 +176,12 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+
+		// Update quest progress after completing task
+		if app.QuestService != nil {
+			_ = app.QuestService.RefreshProgress(r.Context())
+		}
+
 		writeJSON(w, result)
 	})
 
@@ -270,6 +283,81 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 		writeJSON(w, qs)
+	})
+
+	Handle(mux, rr, "GET /api/quests/active", "List active quests", "", func(w http.ResponseWriter, r *http.Request) {
+		var qs []quest.Quest
+		var err error
+
+		// Use service if available for auto-refresh
+		if app.QuestService != nil {
+			qs, err = app.QuestService.GetActiveQuests(r.Context())
+		} else {
+			qs, err = questRepo.ListActive(r.Context())
+		}
+
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, qs)
+	})
+
+	Handle(mux, rr, "GET /api/quests/daily", "List daily quests", "", func(w http.ResponseWriter, r *http.Request) {
+		qs, err := questRepo.ListByType(r.Context(), quest.TypeDaily)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, qs)
+	})
+
+	Handle(mux, rr, "POST /api/quests/{id}/complete", "Complete and claim quest", `{}`, func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+
+		var rewards []quest.Reward
+		var err error
+
+		// Use service if available
+		if app.QuestService != nil {
+			rewards, err = app.QuestService.ClaimRewards(r.Context(), idStr)
+		} else {
+			// Fallback to direct repo access
+			if err := questRepo.Complete(r.Context(), idStr); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			q, ok, err := questRepo.Get(r.Context(), idStr)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if !ok {
+				http.Error(w, "quest not found", 404)
+				return
+			}
+			rewards = q.Rewards
+		}
+
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		// Return rewards
+		writeJSON(w, map[string]any{
+			"rewards": rewards,
+		})
+	})
+
+	Handle(mux, rr, "POST /api/quests/refresh", "Refresh quest progress", `{}`, func(w http.ResponseWriter, r *http.Request) {
+		if app.QuestService != nil {
+			if err := app.QuestService.RefreshProgress(r.Context()); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
 	})
 
 	Handle(mux, rr, "GET /api/recipes", "List recipes", "", func(w http.ResponseWriter, r *http.Request) {
