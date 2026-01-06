@@ -11,8 +11,10 @@ var nextId atomic.Int64
 type Zone string
 
 const (
-	ZoneInbox Zone = "inbox"
-	ZoneLive  Zone = "live"
+	ZoneInbox     Zone = "inbox"
+	ZoneLive      Zone = "live"
+	ZoneCompleted Zone = "completed"
+	ZoneArchived  Zone = "archived"
 )
 
 type Task struct {
@@ -78,7 +80,54 @@ func (t *Task) AddTag(tag string) {
 
 func (t *Task) MarkComplete() {
 	t.Completed = true
+	t.Zone = ZoneCompleted
 	t.touch()
+}
+
+// MoveToLive moves task from inbox to live zone
+func (t *Task) MoveToLive() {
+	if t.Zone == ZoneInbox {
+		now := time.Now()
+		t.Zone = ZoneLive
+		t.LiveAt = &now
+		t.touch()
+	}
+}
+
+// Archive moves task to archived zone
+func (t *Task) Archive() {
+	t.Zone = ZoneArchived
+	t.touch()
+}
+
+// IsRecurring returns true if task has recurring settings
+func (t *Task) IsRecurring() bool {
+	return t.RecurringEveryDays > 0
+}
+
+// ShouldRecur checks if task should recur based on current time
+func (t *Task) ShouldRecur(now time.Time) bool {
+	if !t.IsRecurring() || t.RecurringNextAt == nil {
+		return false
+	}
+	return now.After(*t.RecurringNextAt) || now.Equal(*t.RecurringNextAt)
+}
+
+// Recur creates a new task instance for recurring task
+func (t *Task) Recur() Task {
+	newTask := NewTask(t.Name, t.Description)
+	newTask.Tags = append([]string{}, t.Tags...)
+	newTask.RecurringEveryDays = t.RecurringEveryDays
+	newTask.RecurringCharges = t.RecurringCharges
+	newTask.DeadlineAt = t.DeadlineAt
+
+	// Calculate next recurrence
+	if t.RecurringNextAt != nil {
+		nextAt := t.RecurringNextAt.AddDate(0, 0, t.RecurringEveryDays)
+		newTask.RecurringNextAt = &nextAt
+	}
+
+	return newTask
 }
 
 func (t *Task) HasModifier(id string) bool {

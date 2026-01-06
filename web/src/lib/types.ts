@@ -1,4 +1,4 @@
-export type TaskZone = "inbox" | "live";
+export type TaskZone = "inbox" | "live" | "completed" | "archived";
 
 export type Task = {
   id: number;

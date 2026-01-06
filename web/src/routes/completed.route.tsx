@@ -3,9 +3,8 @@ import { api } from "../lib/api";
 import CompletedView from "../views/completed.view";
 
 export async function completedLoader() {
-    // Get all inbox tasks including completed ones
-    const allTasks = await api.listInbox();
-    const completedTasks = allTasks.filter(t => t.completed);
+    // Get tasks from completed zone
+    const completedTasks = await api.listCompleted();
     return { tasks: completedTasks };
 }
 

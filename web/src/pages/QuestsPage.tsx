@@ -106,8 +106,8 @@ export default function QuestsPage() {
     );
   }
 
-  const activeQuests = quests.filter(q => q.status === "active" || q.status === "in_progress");
-  const completedQuests = quests.filter(q => q.status === "complete");
+  const activeQuests = quests?.filter(q => q.status === "active" || q.status === "in_progress") || [];
+  const completedQuests = quests?.filter(q => q.status === "complete") || [];
 
   return (
     <div className={container}>

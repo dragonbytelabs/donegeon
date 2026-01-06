@@ -185,6 +185,84 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		writeJSON(w, result)
 	})
 
+	Handle(mux, rr, "POST /api/tasks/move-to-live", "Move task from inbox to live", `{"id":1}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ID int `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+
+		t, ok, err := taskRepo.Process(r.Context(), body.ID)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if !ok {
+			http.Error(w, "task not found", 404)
+			return
+		}
+
+		_ = engine.Progress(r.Context())
+		writeJSON(w, t)
+	})
+
+	Handle(mux, rr, "POST /api/tasks/process", "Process a task (mark as worked today)", `{"task_id":1,"villager_id":"v1"}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			TaskID     int    `json:"task_id"`
+			VillagerID string `json:"villager_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+
+		// Get the task
+		t, found, err := taskRepo.Get(r.Context(), body.TaskID)
+		if err != nil || !found {
+			http.Error(w, "task not found", 404)
+			return
+		}
+
+		// Get the villager
+		v, found, err := villagerRepo.Get(r.Context(), body.VillagerID)
+		if err != nil || !found {
+			http.Error(w, "villager not found", 404)
+			return
+		}
+
+		// Check villager has stamina
+		if v.Stamina <= 0 {
+			http.Error(w, "villager has no stamina", 400)
+			return
+		}
+
+		// Move task to live if it's in inbox
+		if t.Zone == task.ZoneInbox {
+			t.MoveToLive()
+		}
+
+		// Consume 1 stamina from villager
+		v.Stamina--
+		if _, err := villagerRepo.Update(r.Context(), v); err != nil {
+			http.Error(w, fmt.Sprintf("failed to update villager: %v", err), 500)
+			return
+		}
+
+		// Update task
+		if _, err := taskRepo.Update(r.Context(), t); err != nil {
+			http.Error(w, fmt.Sprintf("failed to update task: %v", err), 500)
+			return
+		}
+
+		writeJSON(w, map[string]any{
+			"status":   "processed",
+			"task":     t,
+			"villager": v,
+		})
+	})
+
 	Handle(mux, rr, "POST /api/tasks/reorder", "Reorder tasks", `{"source_id":1,"target_id":2}`, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			SourceID int `json:"source_id"`
@@ -220,27 +298,13 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		writeJSON(w, tasks)
 	})
 
-	Handle(mux, rr, "POST /api/tasks/process", "Move task to Live", `{"id":1}`, func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			ID int `json:"id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid json body", 400)
-			return
-		}
-
-		t, ok, err := taskRepo.Process(r.Context(), body.ID)
+	Handle(mux, rr, "GET /api/tasks/completed", "List Completed tasks", "", func(w http.ResponseWriter, r *http.Request) {
+		tasks, err := taskRepo.ListByZone(r.Context(), task.ZoneCompleted)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
-		if !ok {
-			http.Error(w, "task not found", 404)
-			return
-		}
-
-		_ = engine.Progress(r.Context())
-		writeJSON(w, t)
+		writeJSON(w, tasks)
 	})
 
 	Handle(mux, rr, "GET /api/tasks/{id}/modifiers", "List modifiers for a task", "", func(w http.ResponseWriter, r *http.Request) {

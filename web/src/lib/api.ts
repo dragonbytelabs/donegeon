@@ -35,6 +35,7 @@ export const api = {
   listTasks: () => request<Task[]>("/api/tasks"),
   listInbox: () => request<Task[]>("/api/tasks/inbox"),
   listLive: () => request<Task[]>("/api/tasks/live"),
+  listCompleted: () => request<Task[]>("/api/tasks/completed"),
 
   createTask: (name: string, description: string) =>
     request<Task>("/api/tasks", {
@@ -60,8 +61,14 @@ export const api = {
       body: JSON.stringify({ source_id, target_id }),
     }),
 
-  processTask: (id: number) =>
-    request<Task>("/api/tasks/process", {
+  processTask: (task_id: number, villager_id: string) =>
+    request<{ status: string; task: Task; villager: Villager }>("/api/tasks/process", {
+      method: "POST",
+      body: JSON.stringify({ task_id, villager_id }),
+    }),
+
+  moveTaskToLive: (id: number) =>
+    request<Task>("/api/tasks/move-to-live", {
       method: "POST",
       body: JSON.stringify({ id }),
     }),

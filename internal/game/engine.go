@@ -157,6 +157,29 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 		}
 	}
 
+	// Process completed recurring tasks - spawn new instances
+	completedTasks, err := e.Tasks.ListByZone(ctx, task.ZoneCompleted)
+	if err != nil {
+		return DayTickResult{}, err
+	}
+
+	for _, t := range completedTasks {
+		if t.IsRecurring() && t.ShouldRecur(now) {
+			// Create new instance of recurring task
+			newTask := t.Recur()
+			if _, err := e.Tasks.Create(ctx, newTask.Name, newTask.Description); err != nil {
+				// Log but don't fail the entire day tick
+				continue
+			}
+
+			// Archive the old completed task
+			t.Archive()
+			if _, err := e.Tasks.Update(ctx, t); err != nil {
+				continue
+			}
+		}
+	}
+
 	// Capacity pressure: recalc blocking immediately based on zombie count
 	zTotal, err := e.Zombies.Count(ctx)
 	if err != nil {

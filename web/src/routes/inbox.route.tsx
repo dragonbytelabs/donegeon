@@ -42,7 +42,7 @@ export async function inboxAction({ request }: { request: Request }) {
     if (intent === "process") {
         const id = Number(fd.get("id"));
         if (!id) throw new Response("id required", { status: 400 });
-        await api.processTask(id);
+        await api.moveTaskToLive(id);
         return { ok: true };
     }
 
