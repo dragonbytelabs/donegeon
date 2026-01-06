@@ -274,7 +274,7 @@ const grabHandle = css`
   gap: 6px;
   opacity: 0.1;
   transition: all 0.2s;
-  z-index: 999;
+  z-index: 1001;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 
@@ -685,6 +685,24 @@ export default function BoardPage() {
         return [card, ...allChildren];
     };
 
+    // Restack cards dynamically - task at bottom, children stack upward above it
+    const restackCards = (parentCard: CardEntity, cards: CardEntity[]) => {
+        // Get direct children only
+        const children = cards.filter(c => c.parentId === parentCard.id);
+        if (children.length === 0) return;
+
+        // Position each child ABOVE the parent to keep task visible at bottom
+        // Cards stack upward from the parent (negative Y = up on screen)
+        const CARD_OFFSET = 55; // Pixels to offset each card to show header
+        
+        children.forEach((child, index) => {
+            child.x = parentCard.x;
+            // Stack upward: each card goes ABOVE the previous one (negative Y)
+            // Parent (task) stays at bottom, children stack up
+            child.y = parentCard.y - (CARD_OFFSET * (index + 1));
+        });
+    };
+
     // Save board state to localStorage whenever cards change
     const saveBoardState = (cards: CardEntity[]) => {
         try {
@@ -975,6 +993,14 @@ export default function BoardPage() {
                             }
                         }
                     }
+
+                    // Restack all cards that have parentIds to ensure proper positioning
+                    const parentCards = d.cards.filter(c => !c.parentId);
+                    parentCards.forEach(parentCard => {
+                        if (d.cards.some(c => c.parentId === parentCard.id)) {
+                            restackCards(parentCard, d.cards);
+                        }
+                    });
                 }
             });
         } catch (e: any) {
@@ -1531,16 +1557,17 @@ export default function BoardPage() {
                         d.error = `✓ Assigned "${task.name}" to ${villager.name}`;
                         setTimeout(() => update((d) => { d.error = null; }), 2000);
 
-                        // Stack vertically: villager at bottom, task above
+                        // Stack cards: task is parent, villager becomes child
                         const taskCard = d.cards.find(c => c.id === `task-${task.id}`);
                         const villagerCard = d.cards.find(c => c.id === `villager-${villager.id}`);
                         if (taskCard && villagerCard) {
-                            taskCard.parentId = villagerCard.id;
-                            taskCard.x = villagerCard.x; // No horizontal offset
-                            taskCard.y = villagerCard.y - 30; // 30px up to show title
+                            // Villager becomes child of task (not the other way around)
+                            villagerCard.parentId = taskCard.id;
                             // Start work progress timer
                             taskCard.workStartTime = Date.now();
                             taskCard.workProgress = 0;
+                            // Restack to position correctly
+                            restackCards(taskCard, d.cards);
                         }
                     });
 
@@ -1568,9 +1595,15 @@ export default function BoardPage() {
                 console.log("Attaching modifier", modifier.id, "to task", task.id);
                 
                 // Check if this modifier type is already attached to the task
-                const existingModifiers = st.cards.filter(c =>
-                    c.parentId === taskCard.id && c.type === 'modifier'
-                );
+                // Look at all cards in the stack (task might have parentId pointing to villager)
+                const rootCard = taskCard.parentId 
+                    ? st.cards.find(c => c.id === taskCard.parentId)
+                    : taskCard;
+                const stackCards = rootCard 
+                    ? st.cards.filter(c => c.parentId === rootCard.id || c.id === taskCard.id)
+                    : [taskCard];
+                    
+                const existingModifiers = stackCards.filter(c => c.type === 'modifier');
                 const hasSameType = existingModifiers.some(mc => {
                     const existingMod = mc.data as ModifierCard;
                     return existingMod.type === modifier.type;
@@ -1591,19 +1624,12 @@ export default function BoardPage() {
                     d.error = `✓ Applied ${modifier.type.replace(/_/g, ' ')} to "${task.name}"`;
                     setTimeout(() => update((d) => { d.error = null; }), 2000);
 
-                    // Stack in vertical column: task at bottom, modifiers and villagers stacked above
+                    // Attach modifier to task (task is always the parent/root)
                     const modCardIndex = d.cards.findIndex(c => c.id === modCard.id);
                     if (modCardIndex !== -1) {
                         d.cards[modCardIndex].parentId = taskCard.id;
-
-                        // Count how many cards are already on this task
-                        const existingChildren = d.cards.filter(c =>
-                            c.parentId === taskCard.id && c.id !== modCard.id
-                        ).length;
-
-                        // Stack vertically: 30px up per card (showing title area)
-                        d.cards[modCardIndex].x = taskCard.x; // No horizontal offset
-                        d.cards[modCardIndex].y = taskCard.y - 30 - (existingChildren * 30);
+                        // Restack all cards on this task stack
+                        restackCards(taskCard, d.cards);
                     }
                 });
                 await refresh();
@@ -1807,12 +1833,13 @@ export default function BoardPage() {
                     
                     if (villagerCard && resourceCard) {
                         villagerCard.parentId = resourceCard.id;
-                        villagerCard.x = resourceCard.x;
-                        villagerCard.y = resourceCard.y - 30;
                         
                         // Start gathering progress
                         resourceCard.gatherStartTime = Date.now();
                         resourceCard.gatherProgress = 0;
+                        
+                        // Restack cards on resource
+                        restackCards(resourceCard, d.cards);
                         
                         d.error = `✓ ${villager.name} gathering from ${resData.resource_type.replace(/_/g, " ")}`;
                         setTimeout(() => update((d) => { d.error = null; }), 2000);
@@ -1962,25 +1989,18 @@ export default function BoardPage() {
             }
         }
 
-        // Calculate z-index based on stack depth
-        // Special case: modifiers should appear BEHIND their parent task
-        let stackDepth = 0;
-        let currentCard = c;
-        const isModifierChild = c.type === 'modifier' && c.parentId;
-
-        while (currentCard.parentId) {
-            stackDepth++;
-            currentCard = st.cards.find(card => card.id === currentCard.parentId) || currentCard;
-            if (stackDepth > 10) break; // Prevent infinite loops
-        }
-
-        // Modifiers get negative z-index offset to appear behind parent
-        const zIndexAdjustment = isModifierChild ? -5 : 0;
+        // Calculate z-index dynamically based on Y position
+        // Lower Y (higher on screen) = lower z-index (behind)
+        // Higher Y (lower on screen) = higher z-index (in front)
+        // This makes the bottom card fully visible, with cards above it progressively behind
+        const baseZIndex = 10;
+        const yOffset = Math.floor(c.y / 10); // Every 10px of Y adds 1 to z-index
+        const zIndexOffset = baseZIndex + yOffset;
 
         const style: React.CSSProperties = {
             left: `${c.x}px`,
             top: `${c.y}px`,
-            zIndex: isDragging ? 1000 : isHoverTarget ? 500 : (10 + stackDepth + zIndexAdjustment),
+            zIndex: isDragging ? 1000 : isHoverTarget ? 500 : zIndexOffset,
             boxShadow: isHoverTarget
                 ? '0 0 0 4px rgba(59, 130, 246, 0.5), 0 12px 32px rgba(0, 0, 0, 0.4)'
                 : undefined,
@@ -2062,6 +2082,29 @@ export default function BoardPage() {
                     onMouseEnter={() => update(d => { d.hoveredCard = c.id; })}
                     onMouseLeave={() => update(d => { d.hoveredCard = null; })}
                 >
+                    {isStackRoot && (
+                        <div
+                            className={grabHandle}
+                            style={{ left: `${grabHandleLeftOffset}px` }}
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                handleCardMouseDown(c.id, e, true);
+                            }}
+                        >
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                            </div>
+                        </div>
+                    )}
                     <div
                         className={detailButton}
                         onClick={(e) => {
@@ -2071,7 +2114,7 @@ export default function BoardPage() {
                     >
                         ℹ️
                     </div>
-                    {c.parentId && (
+                    {st.cards.some(card => card.parentId === c.id && card.type === "villager") && (
                         <div
                             className={completeButton}
                             onClick={(e) => {
