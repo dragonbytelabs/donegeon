@@ -54,6 +54,8 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 	lootRepo := loot.NewMemoryRepo()
 	deckRepo := deck.NewMemoryRepo()
 	buildingRepo := building.NewMemoryRepo()
+	cardRepo := game.NewMemoryCardRepo()
+	gameStateRepo := game.NewMemoryGameStateRepo()
 
 	clock := game.RealClock{}
 
@@ -68,6 +70,8 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 		Loot:      lootRepo,
 		Decks:     deckRepo,
 		Buildings: buildingRepo,
+		Cards:     cardRepo,
+		GameState: gameStateRepo,
 		Clock:     clock,
 	}
 

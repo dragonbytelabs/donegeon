@@ -805,4 +805,43 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		}
 		writeJSON(w, result)
 	})
+
+	// Game state endpoints
+	Handle(mux, rr, "GET /api/game/state", "Get game state", "", func(w http.ResponseWriter, r *http.Request) {
+		state, err := engine.GameState.Get(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, state)
+	})
+
+	Handle(mux, rr, "GET /api/game/remaining-undrawn", "Get count of undrawn tasks", "", func(w http.ResponseWriter, r *http.Request) {
+		count, err := engine.RemainingUndrawn(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, map[string]int{"remaining_undrawn": count})
+	})
+
+	// Card management endpoints
+	Handle(mux, rr, "GET /api/cards", "List all cards", "", func(w http.ResponseWriter, r *http.Request) {
+		cards, err := engine.Cards.List(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, cards)
+	})
+
+	Handle(mux, rr, "GET /api/cards/zone/{zone}", "List cards by zone", "", func(w http.ResponseWriter, r *http.Request) {
+		zone := r.PathValue("zone")
+		cards, err := engine.Cards.ListByZone(r.Context(), game.CardZone(zone))
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, cards)
+	})
 }

@@ -110,6 +110,7 @@ var Definitions = map[Type]Definition{
 			{Type: "modifier", Weight: 20, ModifierType: modifier.ScheduleToken, ModifierCharges: 2},
 			{Type: "loot", Weight: 15, LootType: loot.Paper, LootAmount: 2},
 			{Type: "loot", Weight: 10, LootType: loot.Ink, LootAmount: 1},
+			{Type: "resource", Weight: 8, ResourceType: "wheat_field", ResourceCharges: 4, ResourceGatherTime: 5, ResourceProduces: "bread", ResourceStaminaRestore: 2},
 		},
 	},
 	TypeMaintenance: {
@@ -123,6 +124,7 @@ var Definitions = map[Type]Definition{
 			{Type: "loot", Weight: 20, LootType: loot.Gear, LootAmount: 2},
 			{Type: "loot", Weight: 15, LootType: loot.Coin, LootAmount: 3},
 			{Type: "blank_task", Weight: 5},
+			{Type: "resource", Weight: 6, ResourceType: "herb_garden", ResourceCharges: 3, ResourceGatherTime: 6, ResourceProduces: "healing_herbs", ResourceStaminaRestore: 3},
 		},
 	},
 	TypePlanning: {

@@ -29,6 +29,8 @@ type Engine struct {
 	Loot      loot.Repository
 	Decks     deck.Repository
 	Buildings building.Repository
+	Cards     CardRepository
+	GameState GameStateRepository
 	Clock     Clock
 }
 
@@ -749,13 +751,20 @@ func (e Engine) OpenDeck(ctx context.Context, deckID string) (deck.OpenResult, e
 		case "loot":
 			// Loot cards are spawned on the board for manual collection
 			// Do not auto-add to inventory - player must drag to Collect deck
-			// lootType := loot.Type(drop.LootType)
-			// inv.Add([]loot.Drop{{Type: lootType, Amount: drop.LootAmount}})
 		case "modifier":
-			// Modifiers go into a pool to be attached later
-			// For now, we just track them in the drop result
+			// Create modifier card in game state
+			if drop.ModifierCard != nil && e.Cards != nil {
+				card := &Card{
+					ID:         fmt.Sprintf("modifier-%d-%d", time.Now().UnixNano(), len(drops)),
+					Type:       CardTypeModifier,
+					Zone:       CardZoneBoard,
+					ModifierID: &drop.ModifierCard.ID,
+					Charges:    &drop.ModifierCard.Charges,
+				}
+				_ = e.Cards.Create(ctx, card)
+			}
 		case "blank_task":
-			// Blank task cards are tracked separately
+			// Blank task cards are spawned on board
 		case "villager":
 			// Would create a new villager (future)
 		}

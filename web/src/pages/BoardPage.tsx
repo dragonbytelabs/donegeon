@@ -182,12 +182,24 @@ const card = css`
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
   border: 2px solid rgba(0, 0, 0, 0.15);
   cursor: grab;
-  transition: box-shadow 0.2s;
+  transition: box-shadow 0.2s, transform 0.2s;
   display: flex;
   flex-direction: column;
   overflow: visible;
   pointer-events: auto;
   z-index: 1;
+  animation: cardSpawn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  @keyframes cardSpawn {
+    0% {
+      transform: scale(0) rotate(-10deg);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+  }
 
   &:hover {
     box-shadow: 
@@ -195,6 +207,7 @@ const card = css`
       0 4px 8px rgba(0, 0, 0, 0.3),
       inset 0 1px 0 rgba(255, 255, 255, 0.8);
     z-index: 2;
+    transform: translateY(-2px);
   }
 
   &:active {
@@ -458,6 +471,118 @@ const deckCost = css`
   margin-top: 4px;
 `;
 
+const tooltip = css`
+  position: absolute;
+  background: rgba(0, 0, 0, 0.95);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 300px;
+  z-index: 10000;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  &::before {
+    content: "";
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid rgba(0, 0, 0, 0.95);
+  }
+`;
+
+const helpButton = css`
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s;
+  z-index: 1000;
+
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const helpModal = css`
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 32px;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 10001;
+
+  h2 {
+    margin: 0 0 16px 0;
+    font-size: 24px;
+    color: #1a1a1a;
+  }
+
+  h3 {
+    margin: 16px 0 8px 0;
+    font-size: 16px;
+    color: #374151;
+  }
+
+  p, li {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #4b5563;
+    margin: 8px 0;
+  }
+
+  ul {
+    margin: 8px 0;
+    padding-left: 20px;
+  }
+
+  kbd {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 12px;
+  }
+`;
+
+const helpOverlay = css`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+`;
+
 type CardEntity = {
     id: string;
     type: "villager" | "task" | "zombie" | "loot" | "modifier" | "building" | "resource" | "food";
@@ -468,6 +593,20 @@ type CardEntity = {
     // Resource gathering state
     gatherProgress?: number; // 0-1, progress of current gather
     gatherStartTime?: number; // timestamp when gathering started
+    // Task work progress state
+    workProgress?: number; // 0-1, progress of current work
+    workStartTime?: number; // timestamp when work started
+};
+
+type Particle = {
+    id: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    emoji: string;
+    opacity: number;
+    createdAt: number;
 };
 
 type State = {
@@ -480,6 +619,7 @@ type State = {
 
     // Entities
     cards: CardEntity[];
+    particles: Particle[];
 
     // Resources
     inventory: Inventory | null;
@@ -499,6 +639,10 @@ type State = {
     // Detail panel
     detailPanelCard: string | null; // Card to show details for
     hoveredCard: string | null; // Card currently being hovered
+    
+    // Help & Tooltips
+    showHelp: boolean;
+    tooltip: { x: number; y: number; text: string } | null;
 };
 
 export default function BoardPage() {
@@ -508,6 +652,7 @@ export default function BoardPage() {
         cameraX: 0,
         cameraY: 0,
         cards: [], // Start empty, will load positions in refresh()
+        particles: [],
         inventory: null,
         villagers: [],
         tasks: [],
@@ -521,6 +666,8 @@ export default function BoardPage() {
         hoverTarget: null,
         detailPanelCard: null,
         hoveredCard: null,
+        showHelp: false,
+        tooltip: null,
     });
 
     const boardRef = useRef<HTMLDivElement>(null);
@@ -547,10 +694,22 @@ export default function BoardPage() {
                 x: c.x,
                 y: c.y,
                 parentId: c.parentId,
+                gatherProgress: c.gatherProgress,
+                gatherStartTime: c.gatherStartTime,
+                workProgress: c.workProgress,
+                workStartTime: c.workStartTime,
                 // Save full data for modifier, loot, resource, and food cards since they're not reloaded from backend
                 data: (c.type === 'modifier' || c.type === 'loot' || c.type === 'resource' || c.type === 'food') ? c.data : undefined
             }));
-            localStorage.setItem("boardState", JSON.stringify({ cards: positions }));
+            
+            // Save camera position too
+            const state = {
+                cards: positions,
+                cameraX: st.cameraX,
+                cameraY: st.cameraY,
+            };
+            
+            localStorage.setItem("boardState", JSON.stringify(state));
             console.log("Saved board state to localStorage:", positions.length, "cards");
         } catch (err) {
             console.warn("Failed to save board state:", err);
@@ -558,18 +717,36 @@ export default function BoardPage() {
     };
 
     // Load saved positions from localStorage (returns Map of id -> {x, y, parentId, data?})
-    const loadSavedPositions = (): Map<string, { x: number; y: number; parentId?: string; data?: any }> => {
+    const loadSavedPositions = (): Map<string, { x: number; y: number; parentId?: string; data?: any; gatherProgress?: number; gatherStartTime?: number; workProgress?: number; workStartTime?: number }> => {
         try {
             const saved = localStorage.getItem("boardState");
             if (saved) {
                 const parsed = JSON.parse(saved);
-                const posMap = new Map<string, { x: number; y: number; parentId?: string; data?: any }>();
+                const posMap = new Map<string, { x: number; y: number; parentId?: string; data?: any; gatherProgress?: number; gatherStartTime?: number; workProgress?: number; workStartTime?: number }>();
                 if (parsed.cards) {
                     for (const card of parsed.cards) {
-                        posMap.set(card.id, { x: card.x, y: card.y, parentId: card.parentId, data: card.data });
+                        posMap.set(card.id, { 
+                            x: card.x, 
+                            y: card.y, 
+                            parentId: card.parentId, 
+                            data: card.data,
+                            gatherProgress: card.gatherProgress,
+                            gatherStartTime: card.gatherStartTime,
+                            workProgress: card.workProgress,
+                            workStartTime: card.workStartTime,
+                        });
                     }
                     console.log("Loaded", posMap.size, "saved card positions from localStorage");
                 }
+                
+                // Restore camera position
+                if (parsed.cameraX !== undefined && parsed.cameraY !== undefined) {
+                    update((d) => {
+                        d.cameraX = parsed.cameraX;
+                        d.cameraY = parsed.cameraY;
+                    });
+                }
+                
                 return posMap;
             }
         } catch (err) {
@@ -640,6 +817,8 @@ export default function BoardPage() {
                             y: savedPos?.y ?? (400 + Math.floor(i / 6) * 190),
                             data: t,
                             parentId: savedPos?.parentId,
+                            workProgress: savedPos?.workProgress,
+                            workStartTime: savedPos?.workStartTime,
                         });
                     });
 
@@ -713,6 +892,24 @@ export default function BoardPage() {
                             });
                         }
                     });
+                    
+                    // Add building cards for built buildings
+                    const builtBuildings = buildings.filter(b => b.status === "built");
+                    builtBuildings.forEach((b, i) => {
+                        const card = d.cards.find(c => c.id === `building-${b.type}`);
+                        if (card) {
+                            card.data = b;
+                        } else {
+                            // Add new buildings in a row
+                            d.cards.push({
+                                id: `building-${b.type}`,
+                                type: "building",
+                                x: 100 + i * 150,
+                                y: 100,
+                                data: b,
+                            });
+                        }
+                    });
 
                     // Remove zombie cards that no longer exist
                     const zombieIds = new Set(zombies.map(z => `zombie-${z.id}`));
@@ -770,6 +967,10 @@ export default function BoardPage() {
                                     y: savedData.y,
                                     data: cardData,
                                     parentId: savedData.parentId,
+                                    gatherProgress: savedData.gatherProgress,
+                                    gatherStartTime: savedData.gatherStartTime,
+                                    workProgress: savedData.workProgress,
+                                    workStartTime: savedData.workStartTime,
                                 });
                             }
                         }
@@ -787,6 +988,114 @@ export default function BoardPage() {
     useEffect(() => {
         void refresh();
     }, []);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Don't trigger shortcuts when typing in an input
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+
+            switch (e.key.toLowerCase()) {
+                case ' ': // Space - End day
+                    e.preventDefault();
+                    (async () => {
+                        try {
+                            await api.dayTick();
+                            await refresh();
+                        } catch (err) {
+                            console.error('End day error:', err);
+                        }
+                    })();
+                    break;
+                case 'r': // R - Refresh
+                    e.preventDefault();
+                    void refresh();
+                    break;
+                case 'escape': // Escape - Close detail panel
+                    update(d => { d.detailPanelCard = null; });
+                    break;
+                case '1': // 1 - Open First Day deck
+                    void openDeck('deck_first_day');
+                    break;
+                case '2': // 2 - Open Organization deck
+                    void openDeck('deck_organization');
+                    break;
+                case '3': // 3 - Open Maintenance deck
+                    void openDeck('deck_maintenance');
+                    break;
+                case 'e': // E - Open first available deck
+                    e.preventDefault();
+                    const firstDayDeck = st.decks.find(d => d.type === 'first_day');
+                    const orgDeck = st.decks.find(d => d.type === 'organization');
+                    const maintDeck = st.decks.find(d => d.type === 'maintenance');
+                    
+                    if (firstDayDeck && firstDayDeck.times_opened < 5) {
+                        void openDeck('deck_first_day');
+                    } else if (orgDeck?.status === 'unlocked') {
+                        void openDeck('deck_organization');
+                    } else if (maintDeck?.status === 'unlocked') {
+                        void openDeck('deck_maintenance');
+                    }
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [refresh, openDeck, st.decks, update]);
+
+    // Particle physics loop
+    useEffect(() => {
+        const interval = setInterval(() => {
+            update((d) => {
+                const now = Date.now();
+                d.particles = d.particles.filter(p => {
+                    const age = now - p.createdAt;
+                    // Remove particles after 1 second
+                    if (age > 1000) return false;
+                    
+                    // Update position
+                    const dt = 0.016; // ~60fps
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                    p.vy += 300 * dt; // Gravity
+                    p.opacity = Math.max(0, 1 - (age / 1000));
+                    
+                    return true;
+                });
+            });
+        }, 16); // ~60fps
+        
+        return () => clearInterval(interval);
+    }, [update]);
+
+    // Task work progress loop - update work progress when villagers are on tasks
+    useEffect(() => {
+        const interval = setInterval(() => {
+            update((d) => {
+                const now = Date.now();
+                
+                d.cards.forEach((taskCard) => {
+                    if (taskCard.type !== "task") return;
+                    if (!taskCard.workStartTime) return;
+                    if (taskCard.data?.completed) return; // Don't update completed tasks
+                    
+                    const taskData = taskCard.data as { work_time: number; completed?: boolean };
+                    const elapsed = now - taskCard.workStartTime;
+                    const progress = Math.min(1, elapsed / (taskData.work_time * 1000));
+                    
+                    taskCard.workProgress = progress;
+                    
+                    // Work is complete when progress reaches 1
+                    // The actual completion will be handled by the existing completeTask flow
+                });
+            });
+        }, 100);
+        
+        return () => clearInterval(interval);
+    }, [update]);
 
     // Gathering game loop - update progress and spawn food
     useEffect(() => {
@@ -806,55 +1115,90 @@ export default function BoardPage() {
                     
                     // If complete, spawn food
                     if (progress >= 1) {
+                        // Find the villager on this resource
+                        const villager = d.cards.find(c => c.parentId === resourceCard.id && c.type === "villager");
+                        
+                        if (!villager) {
+                            // No villager found - clear the gathering state to prevent infinite loop
+                            resourceCard.gatherStartTime = undefined;
+                            resourceCard.gatherProgress = 0;
+                            return;
+                        }
+                        
                         console.log(`Gathering complete! Spawning ${resData.produces}`);
                         
                         // Decrement resource charges
                         resData.charges = Math.max(0, resData.charges - 1);
                         
-                        // Find the villager on this resource
-                        const villager = d.cards.find(c => c.parentId === resourceCard.id && c.type === "villager");
+                        // Spawn food card
+                        const foodId = `food-${Date.now()}`;
+                        const foodX = resourceCard.x + 140;
+                        const foodY = resourceCard.y;
+                        d.cards.push({
+                            id: foodId,
+                            type: "food",
+                            x: foodX,
+                            y: foodY,
+                            data: {
+                                food_type: resData.produces,
+                                stamina_restore: resData.stamina_restore,
+                            },
+                        });
                         
-                        if (villager) {
-                            // Spawn food card
-                            const foodId = `food-${Date.now()}`;
-                            d.cards.push({
-                                id: foodId,
-                                type: "food",
-                                x: resourceCard.x + 140,
-                                y: resourceCard.y,
-                                data: {
-                                    food_type: resData.produces,
-                                    stamina_restore: resData.stamina_restore,
-                                },
+                        // Spawn particles at food location
+                        const foodEmojis: Record<string, string> = {
+                            berries: "🫐",
+                            mushroom: "🍄",
+                            bread: "🍞",
+                            healing_herbs: "🌿",
+                        };
+                        for (let i = 0; i < 3; i++) {
+                            const angle = (Math.random() * Math.PI * 2);
+                            const speed = 50 + Math.random() * 50;
+                            d.particles.push({
+                                id: `particle-${Date.now()}-${i}`,
+                                x: foodX + 60,
+                                y: foodY + 80,
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed - 50,
+                                emoji: foodEmojis[resData.produces] || "✨",
+                                opacity: 1,
+                                createdAt: Date.now(),
                             });
+                        }
+                        
+                        // Check if resource has more charges
+                        if (resData.charges > 0) {
+                            // Resource still has charges - restart gathering immediately
+                            resourceCard.gatherStartTime = Date.now();
+                            resourceCard.gatherProgress = 0;
+                            console.log(`${resData.resource_type} has ${resData.charges} charges left, continuing gathering`);
+                        } else {
+                            // Resource depleted - unparent villager and remove resource
+                            villager.parentId = undefined;
+                            resourceCard.gatherStartTime = undefined;
+                            resourceCard.gatherProgress = 0;
                             
-                            // Check if resource has more charges
-                            if (resData.charges > 0) {
-                                // Resource still has charges - restart gathering immediately
-                                resourceCard.gatherStartTime = Date.now();
-                                resourceCard.gatherProgress = 0;
-                                console.log(`${resData.resource_type} has ${resData.charges} charges left, continuing gathering`);
-                            } else {
-                                // Resource depleted - unparent villager and remove resource
-                                villager.parentId = undefined;
-                                resourceCard.gatherStartTime = undefined;
-                                resourceCard.gatherProgress = 0;
-                                
-                                d.cards = d.cards.filter(c => c.id !== resourceCard.id);
-                                d.error = `✓ ${resData.resource_type.replace(/_/g, " ")} depleted`;
-                                setTimeout(() => update((d) => { d.error = null; }), 2000);
-                            }
+                            d.cards = d.cards.filter(c => c.id !== resourceCard.id);
+                            d.error = `✓ ${resData.resource_type.replace(/_/g, " ")} depleted`;
+                            setTimeout(() => update((d) => { d.error = null; }), 2000);
                         }
                     }
                 });
-                
-                // Save board state after updates
-                saveBoardState(d.cards);
             });
         }, 100);
         
         return () => clearInterval(interval);
     }, []);
+
+    // Save board state periodically (every 2 seconds instead of every 100ms)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            saveBoardState(st.cards);
+        }, 2000);
+        
+        return () => clearInterval(interval);
+    }, [st.cards]);
 
     // Camera drag
     const handleBoardMouseDown = (e: React.MouseEvent) => {
@@ -1194,6 +1538,9 @@ export default function BoardPage() {
                             taskCard.parentId = villagerCard.id;
                             taskCard.x = villagerCard.x; // No horizontal offset
                             taskCard.y = villagerCard.y - 30; // 30px up to show title
+                            // Start work progress timer
+                            taskCard.workStartTime = Date.now();
+                            taskCard.workProgress = 0;
                         }
                     });
 
@@ -1263,6 +1610,7 @@ export default function BoardPage() {
             }
 
             // Task + Task = Check for recipe
+            // Task + Task = Try recipe combination
             else if (draggedCard.type === "task" && targetCard.type === "task") {
                 const task1 = draggedCard.data as Task;
                 const task2 = targetCard.data as Task;
@@ -1276,11 +1624,77 @@ export default function BoardPage() {
                     update((d) => {
                         d.error = `✓ Recipe executed!`;
                         setTimeout(() => update((d) => { d.error = null; }), 2000);
+                        
+                        // Spawn celebration particles at target location
+                        for (let i = 0; i < 8; i++) {
+                            const angle = (i / 8) * Math.PI * 2;
+                            const speed = 80 + Math.random() * 40;
+                            d.particles.push({
+                                id: `particle-${Date.now()}-${i}`,
+                                x: targetCard.x + 60,
+                                y: targetCard.y + 80,
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed - 70,
+                                emoji: ["✨", "🎉", "⭐", "💫"][Math.floor(Math.random() * 4)],
+                                opacity: 1,
+                                createdAt: Date.now(),
+                            });
+                        }
                     });
                     await refresh();
                 } catch (e: any) {
                     console.log("No recipe found:", e.message);
                     // No recipe found, ignore
+                }
+            }
+            
+            // Food + Modifier = Enhanced modifier (frontend-only recipe for now)
+            else if ((draggedCard.type === "food" && targetCard.type === "modifier") ||
+                (draggedCard.type === "modifier" && targetCard.type === "food")) {
+                
+                const foodCard = draggedCard.type === "food" ? draggedCard : targetCard;
+                const modifierCard = draggedCard.type === "modifier" ? draggedCard : targetCard;
+                const foodData = foodCard.data as { food_type: string; stamina_restore: number };
+                const modifierData = modifierCard.data as any;
+                
+                // Enhance modifier by adding a charge (if it has charges)
+                if (modifierData.max_charges && modifierData.max_charges > 0) {
+                    update((d) => {
+                        const mod = d.cards.find(c => c.id === modifierCard.id);
+                        if (mod && mod.data.charges < mod.data.max_charges) {
+                            mod.data.charges = Math.min(mod.data.max_charges, mod.data.charges + 1);
+                            
+                            // Remove food
+                            d.cards = d.cards.filter(c => c.id !== foodCard.id);
+                            
+                            // Spawn particles
+                            for (let i = 0; i < 5; i++) {
+                                const angle = (Math.random() * Math.PI * 2);
+                                const speed = 50 + Math.random() * 50;
+                                d.particles.push({
+                                    id: `particle-${Date.now()}-${i}`,
+                                    x: modifierCard.x + 60,
+                                    y: modifierCard.y + 80,
+                                    vx: Math.cos(angle) * speed,
+                                    vy: Math.sin(angle) * speed - 50,
+                                    emoji: "⚡",
+                                    opacity: 1,
+                                    createdAt: Date.now(),
+                                });
+                            }
+                            
+                            d.error = `✓ Enhanced modifier with ${foodData.food_type}!`;
+                            setTimeout(() => update((d) => { d.error = null; }), 2000);
+                        } else {
+                            d.error = `✗ Modifier is already at max charges`;
+                            setTimeout(() => update((d) => { d.error = null; }), 2000);
+                        }
+                    });
+                } else {
+                    update((d) => {
+                        d.error = `✗ This modifier cannot be enhanced`;
+                        setTimeout(() => update((d) => { d.error = null; }), 2000);
+                    });
                 }
             }
 
@@ -1332,6 +1746,22 @@ export default function BoardPage() {
                         const oldStamina = v.stamina;
                         v.stamina = Math.min(v.max_stamina, v.stamina + foodData.stamina_restore);
                         const gained = v.stamina - oldStamina;
+                        
+                        // Spawn particles at villager location
+                        for (let i = 0; i < 5; i++) {
+                            const angle = (Math.random() * Math.PI * 2);
+                            const speed = 30 + Math.random() * 40;
+                            d.particles.push({
+                                id: `particle-${Date.now()}-${i}`,
+                                x: villagerCard.x + 60,
+                                y: villagerCard.y + 50,
+                                vx: Math.cos(angle) * speed,
+                                vy: Math.sin(angle) * speed - 60,
+                                emoji: "✨",
+                                opacity: 1,
+                                createdAt: Date.now(),
+                            });
+                        }
                         
                         // Remove food card
                         d.cards = d.cards.filter(c => c.id !== food.id);
@@ -1641,7 +2071,7 @@ export default function BoardPage() {
                     >
                         ℹ️
                     </div>
-                    {t.assigned_villager && (
+                    {c.parentId && (
                         <div
                             className={completeButton}
                             onClick={(e) => {
@@ -1670,6 +2100,28 @@ export default function BoardPage() {
                                 🧙 Assigned
                             </div>
                         )}
+                        {c.workStartTime && !t.completed && (
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    bottom: 0,
+                                    left: 0,
+                                    right: 0,
+                                    height: "4px",
+                                    background: "rgba(0,0,0,0.2)",
+                                    overflow: "hidden",
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        height: "100%",
+                                        background: "linear-gradient(to right, #10b981, #3b82f6)",
+                                        width: `${(c.workProgress || 0) * 100}%`,
+                                        transition: "width 0.1s linear",
+                                    }}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             );
@@ -1689,6 +2141,34 @@ export default function BoardPage() {
                         <div className={cardTitle} style={{ color: "white" }}>Zombie</div>
                         <div className={cardSubtitle} style={{ color: "rgba(255,255,255,0.8)" }}>
                             {z.reason}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        
+        if (c.type === "building") {
+            const b = c.data as Building;
+            const buildingIcons: Record<string, string> = {
+                rest_hall: "🛏️",
+                farm: "🌾",
+                workshop: "🔨",
+                library: "📚",
+            };
+            
+            return (
+                <div
+                    className={card}
+                    style={{ ...style, background: "linear-gradient(180deg, #e0e7ff, #c7d2fe)", cursor: "default" }}
+                >
+                    <div className={cardHeader} style={{ background: "linear-gradient(180deg, rgba(79, 70, 229, 0.1), transparent)" }}>
+                        Building
+                    </div>
+                    <div className={cardBody}>
+                        <div className={cardIcon}>{buildingIcons[b.type] || "🏛️"}</div>
+                        <div className={cardTitle}>{b.name}</div>
+                        <div className={cardSubtitle}>
+                            {b.description}
                         </div>
                     </div>
                 </div>
@@ -1729,6 +2209,7 @@ export default function BoardPage() {
                 berries: "🫐",
                 mushroom: "🍄",
                 bread: "🍞",
+                healing_herbs: "🌿",
             };
 
             return (
@@ -1756,6 +2237,8 @@ export default function BoardPage() {
             const resourceIcons: Record<string, string> = {
                 berry_bush: "🌿",
                 mushroom_patch: "🍄",
+                wheat_field: "🌾",
+                herb_garden: "🪴",
             };
             
             const hasVillager = st.cards.some(card => card.parentId === c.id && card.type === "villager");
@@ -2013,6 +2496,24 @@ export default function BoardPage() {
                     const CardElement = renderCard(c);
                     return CardElement ? React.cloneElement(CardElement, { key: c.id }) : null;
                 })}
+                
+                {/* Render particles */}
+                {st.particles.map((p) => (
+                    <div
+                        key={p.id}
+                        style={{
+                            position: "absolute",
+                            left: p.x,
+                            top: p.y,
+                            fontSize: 20,
+                            opacity: p.opacity,
+                            pointerEvents: "none",
+                            userSelect: "none",
+                        }}
+                    >
+                        {p.emoji}
+                    </div>
+                ))}
             </div>
 
             <div className={deckDisplay}>
@@ -2161,6 +2662,90 @@ export default function BoardPage() {
                     </div>
                 );
             })()}
+            
+            {/* Help Button */}
+            <button
+                className={helpButton}
+                onClick={() => update(d => { d.showHelp = !d.showHelp; })}
+                title="Show help and keyboard shortcuts"
+            >
+                ?
+            </button>
+            
+            {/* Help Modal */}
+            {st.showHelp && (
+                <>
+                    <div className={helpOverlay} onClick={() => update(d => { d.showHelp = false; })} />
+                    <div className={helpModal}>
+                        <h2>🎮 How to Play</h2>
+                        
+                        <h3>📋 Basics</h3>
+                        <ul>
+                            <li>Drag cards onto each other to combine them</li>
+                            <li>Drag villagers onto tasks to assign work</li>
+                            <li>Open decks to get new cards (costs coins after first 5)</li>
+                            <li>Complete tasks to earn loot and progress quests</li>
+                        </ul>
+                        
+                        <h3>🃏 Card Interactions</h3>
+                        <ul>
+                            <li><strong>Villager + Task:</strong> Assign villager to work on task</li>
+                            <li><strong>Modifier + Task:</strong> Attach modifier to speed up or improve task</li>
+                            <li><strong>Villager + Resource:</strong> Start gathering food</li>
+                            <li><strong>Food + Villager:</strong> Restore villager stamina</li>
+                            <li><strong>Task + Task:</strong> Combine two blank tasks into a project</li>
+                            <li><strong>Loot + Collect Deck:</strong> Add loot to your inventory</li>
+                        </ul>
+                        
+                        <h3>⚡ Resources & Stamina</h3>
+                        <ul>
+                            <li>Villagers need stamina to work on tasks</li>
+                            <li>Gather food from resources (berry bush, wheat field, etc.)</li>
+                            <li>Feed villagers to restore their stamina</li>
+                            <li>Resources have limited charges and deplete over time</li>
+                        </ul>
+                        
+                        <h3>⌨️ Keyboard Shortcuts</h3>
+                        <ul>
+                            <li><kbd>Space</kbd> - End the day</li>
+                            <li><kbd>R</kbd> - Refresh board</li>
+                            <li><kbd>E</kbd> - Open first available deck</li>
+                            <li><kbd>1-4</kbd> - Open specific deck (First Day, Organization, Maintenance, Collect)</li>
+                            <li><kbd>Esc</kbd> - Close detail panel</li>
+                        </ul>
+                        
+                        <h3>💡 Tips</h3>
+                        <ul>
+                            <li>Modifiers show charges in bottom-left (0 = infinite)</li>
+                            <li>Progress bars show work/gathering progress</li>
+                            <li>Click ℹ️ button on cards to see stack details</li>
+                            <li>Resources spawn food automatically when gathering completes</li>
+                            <li>Higher stamina food takes longer to gather but restores more</li>
+                        </ul>
+                        
+                        <button
+                            className={button}
+                            onClick={() => update(d => { d.showHelp = false; })}
+                            style={{ marginTop: 16, width: "100%" }}
+                        >
+                            Got it!
+                        </button>
+                    </div>
+                </>
+            )}
+            
+            {/* Tooltip */}
+            {st.tooltip && (
+                <div
+                    className={tooltip}
+                    style={{
+                        left: st.tooltip.x,
+                        top: st.tooltip.y - 60,
+                    }}
+                >
+                    {st.tooltip.text}
+                </div>
+            )}
         </div>
     );
 }
