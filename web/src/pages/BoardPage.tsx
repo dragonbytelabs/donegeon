@@ -55,6 +55,44 @@ const topBar = css`
   color: white;
 `;
 
+const debugPanel = css`
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 0, 0, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 100;
+  color: white;
+  font-size: 12px;
+`;
+
+const debugTitle = css`
+  font-size: 14px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  color: #ff6b6b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const debugZombieItem = css`
+  padding: 8px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 11px;
+`;
+
 const leftHud = css`
   position: fixed;
   top: 80px;
@@ -273,13 +311,14 @@ const grabHandle = css`
   align-items: center;
   justify-content: center;
   gap: 6px;
-  opacity: 0.1;
+  opacity: 0.6;
   transition: all 0.2s;
   z-index: 1001;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   pointer-events: auto;
 
   &:hover {
+    opacity: 1;
     background: #ffffff;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
     transform: translateY(-50%) scale(1.08);
@@ -426,9 +465,9 @@ const deckDisplay = css`
 `;
 
 const deckCard = css`
-  width: 80px;
-  height: 110px;
-  border-radius: 10px;
+  width: 120px;
+  height: 160px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #7c3aed, #2563eb);
   border: 2px solid rgba(255, 255, 255, 0.3);
   box-shadow: 
@@ -508,6 +547,32 @@ const helpButton = css`
   height: 50px;
   border-radius: 50%;
   background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s;
+  z-index: 1000;
+
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const completedButton = css`
+  position: fixed;
+  bottom: 20px;
+  right: 90px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #059669);
   color: white;
   border: none;
   font-size: 24px;
@@ -644,6 +709,7 @@ type State = {
     
     // Help & Tooltips
     showHelp: boolean;
+    showDebug: boolean;
     tooltip: { x: number; y: number; text: string } | null;
 };
 
@@ -670,6 +736,7 @@ export default function BoardPage() {
         detailPanelCard: null,
         hoveredCard: null,
         showHelp: false,
+        showDebug: false,
         tooltip: null,
     });
 
@@ -686,6 +753,55 @@ export default function BoardPage() {
         const allChildren = children.flatMap(child => getStack(child.id, cards));
 
         return [card, ...allChildren];
+    };
+
+    // Get recipe preview text for card combinations
+    const getRecipePreview = (draggedCard: CardEntity, targetCard: CardEntity): string | null => {
+        // Villager + Task = Assign villager to task
+        if (draggedCard.type === "villager" && targetCard.type === "task") {
+            const villager = draggedCard.data as Villager;
+            const task = targetCard.data as Task;
+            if (villager.stamina <= 0) {
+                return "❌ No stamina - Villager needs food";
+            }
+            return `🧙 Assign ${villager.name} to work on task`;
+        }
+
+        // Modifier + Task = Attach modifier
+        if (draggedCard.type === "modifier" && targetCard.type === "task") {
+            const modifier = draggedCard.data as ModifierCard;
+            const chargesText = modifier.charges === 0 ? "∞" : `${modifier.charges} charge${modifier.charges !== 1 ? 's' : ''}`;
+            return `⚡ Attach modifier (${chargesText} remaining)`;
+        }
+
+        // Task + Task = Combine into project
+        if (draggedCard.type === "task" && targetCard.type === "task") {
+            return `📦 Combine tasks into project`;
+        }
+
+        // Villager + Resource = Gather food
+        if (draggedCard.type === "villager" && targetCard.type === "resource") {
+            const villager = draggedCard.data as Villager;
+            const resource = targetCard.data as any;
+            if (villager.stamina <= 0) {
+                return "❌ No stamina - Villager needs food";
+            }
+            if (resource.charges <= 0) {
+                return "❌ Resource depleted";
+            }
+            return `🌾 Gather food (+${resource.stamina_restore} stamina when ready)`;
+        }
+
+        // Food + Villager = Feed villager
+        if (draggedCard.type === "food" && targetCard.type === "villager") {
+            const food = draggedCard.data as any;
+            const villager = targetCard.data as Villager;
+            const restoredStamina = Math.min(food.stamina_restore, villager.max_stamina - villager.stamina);
+            return `🍖 Feed ${villager.name} (+${restoredStamina} stamina)`;
+        }
+
+        // Loot + Collect deck handled separately
+        return null;
     };
 
     // Restack cards dynamically - task at bottom, children stack upward above it
@@ -1045,7 +1161,16 @@ export default function BoardPage() {
                     void refresh();
                     break;
                 case 'escape': // Escape - Close detail panel
-                    update(d => { d.detailPanelCard = null; });
+                    update(d => { 
+                        d.detailPanelCard = null;
+                        if (d.showDebug) d.showDebug = false;
+                    });
+                    break;
+                case 'd': // D - Toggle debug panel
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        update(d => { d.showDebug = !d.showDebug; });
+                    }
                     break;
                 case '1': // 1 - Open First Day deck
                     void openDeck('deck_first_day');
@@ -1375,8 +1500,25 @@ export default function BoardPage() {
                         if (!currentHoverTarget || currentHoverTarget !== otherCard.id) {
                             console.log("Hovering over:", otherCard.id, otherCard.type, "distance:", distance);
                         }
+                        
+                        // Show recipe preview tooltip
+                        const preview = getRecipePreview(draggedCard, otherCard);
+                        if (preview) {
+                            d.tooltip = {
+                                x: me.clientX + 20,
+                                y: me.clientY + 20,
+                                text: preview
+                            };
+                        } else {
+                            d.tooltip = null;
+                        }
                         break;
                     }
+                }
+                
+                // Clear tooltip if not hovering over anything
+                if (d.hoverTarget === null) {
+                    d.tooltip = null;
                 }
 
                 if (d.hoverTarget === null && currentHoverTarget !== null) {
@@ -1473,53 +1615,67 @@ export default function BoardPage() {
                 rewardMsg += ` | Stamina restored!`;
             }
             
-            // Update the board: remove task, handle modifiers based on charges
+            // Update the board: break up the entire stack and remove task
             update(d => {
+                // First, find ALL cards in the stack (including parents of parents)
+                const stackCardIds = new Set<string>();
+                
+                // Start with the task and work upwards to find the root
+                let currentCard = taskCard;
+                stackCardIds.add(currentCard.id);
+                
+                while (currentCard.parentId) {
+                    const parent = d.cards.find(c => c.id === currentCard.parentId);
+                    if (parent) {
+                        stackCardIds.add(parent.id);
+                        currentCard = parent;
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Now find the root and get all descendants
+                const rootCard = currentCard;
+                const addDescendants = (parentId: string) => {
+                    d.cards.filter(c => c.parentId === parentId).forEach(child => {
+                        stackCardIds.add(child.id);
+                        addDescendants(child.id);
+                    });
+                };
+                addDescendants(rootCard.id);
+                
+                // Break up the entire stack - unparent ALL cards in the stack
+                d.cards.forEach(c => {
+                    if (stackCardIds.has(c.id)) {
+                        c.parentId = undefined;
+                    }
+                });
+                
+                // Then filter out cards that should be removed
                 d.cards = d.cards.filter(c => {
                     // Remove the task
                     if (c.id === `task-${taskId}`) return false;
                     
-                    // Handle modifiers based on their charge system
-                    if (c.parentId === taskCard.id && c.type === 'modifier') {
+                    // Handle modifiers that were in the stack
+                    if (c.type === 'modifier' && stackCardIds.has(c.id)) {
                         const modData = c.data as any;
                         
-                        // Persistent modifiers (max_charges = 0) stay attached to tasks
-                        // Examples: deadline_pin
-                        if (modData.max_charges === 0) {
-                            // Keep persistent modifier attached - don't unparent
-                            return true;
-                        }
-                        
-                        // Charge-based modifiers (max_charges > 0) decrement on use
-                        // Examples: recurring_contract (4), schedule_token (2), importance_seal (3)
+                        // Charge-based modifiers: decrement on use
                         if (modData.max_charges > 0) {
-                            // Decrement charges
                             modData.charges = Math.max(0, (modData.charges || 0) - 1);
                             
                             // If spent (no charges left), remove it
                             if (modData.charges <= 0) {
                                 return false;
-                            } else {
-                                // Still has charges, unparent and return to board
-                                c.parentId = undefined;
-                                c.data = modData;
-                                return true;
                             }
+                            
+                            // Update the data
+                            c.data = modData;
                         }
-                        
-                        // Fallback: unknown modifier type, remove it
-                        return false;
                     }
                     
-                    // Keep everything else (including the villager)
+                    // Keep everything else
                     return true;
-                });
-                
-                // Unparent any cards that were children of the removed task
-                d.cards.forEach(c => {
-                    if (c.parentId === `task-${taskId}`) {
-                        c.parentId = undefined;
-                    }
                 });
                 
                 d.error = rewardMsg;
@@ -1903,6 +2059,17 @@ export default function BoardPage() {
 
     async function openDeck(deckId: string) {
         console.log("Opening deck:", deckId);
+        
+        // Check if deck is locked
+        const deck = st.decks.find(d => d.id === deckId);
+        if (deck && deck.status === "locked") {
+            update((d) => {
+                d.error = `✗ ${deck.name} is locked. Process more tasks to unlock!`;
+                setTimeout(() => update((d) => { d.error = null; }), 3000);
+            });
+            return;
+        }
+        
         try {
             const result = await api.openDeck(deckId);
             console.log("Deck opened, drops:", result.drops);
@@ -1953,8 +2120,10 @@ export default function BoardPage() {
 
             await refresh();
         } catch (e: any) {
+            console.error("Failed to open deck:", e);
             update((d) => {
-                d.error = String(e?.message ?? e);
+                d.error = `✗ ${String(e?.message ?? e)}`;
+                setTimeout(() => update((d) => { d.error = null; }), 4000);
             });
         }
     }
@@ -2007,7 +2176,9 @@ export default function BoardPage() {
             top: `${c.y}px`,
             zIndex: isDragging ? 1000 : isHoverTarget ? 500 : zIndexOffset,
             boxShadow: isHoverTarget
-                ? '0 0 0 4px rgba(59, 130, 246, 0.5), 0 12px 32px rgba(0, 0, 0, 0.4)'
+                ? getRecipePreview(st.cards.find(card => card.id === st.dragging)!, c)
+                    ? '0 0 0 4px rgba(34, 197, 94, 0.6), 0 12px 32px rgba(34, 197, 94, 0.3)' // Green for valid
+                    : '0 0 0 4px rgba(239, 68, 68, 0.6), 0 12px 32px rgba(239, 68, 68, 0.3)' // Red for invalid
                 : undefined,
             borderColor: isHovered ? 'white' : undefined,
             borderWidth: isHovered ? '3px' : undefined,
@@ -2035,27 +2206,29 @@ export default function BoardPage() {
                     onMouseLeave={() => update(d => { d.hoveredCard = null; })}
                 >
                     {isStackRoot && (
-                        <div
-                            className={grabHandle}
-                            style={{ left: `${grabHandleLeftOffset}px` }}
-                            onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleCardMouseDown(c.id, e, true);
-                            }}
-                        >
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                        <>
+                            <div
+                                className={grabHandle}
+                                style={{ left: `${grabHandleLeftOffset}px` }}
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    handleCardMouseDown(c.id, e, true);
+                                }}
+                            >
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                            </div>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                            </div>
-                        </div>
+                        </>
                     )}
                     <div className={cardHeader} style={{ background: "linear-gradient(180deg, rgba(109, 40, 217, 0.1), transparent)" }}>
                         Villager
@@ -2088,27 +2261,90 @@ export default function BoardPage() {
                     onMouseLeave={() => update(d => { d.hoveredCard = null; })}
                 >
                     {isStackRoot && (
-                        <div
-                            className={grabHandle}
-                            style={{ left: `${grabHandleLeftOffset}px` }}
-                            onMouseDown={(e) => {
-                                e.stopPropagation();
-                                handleCardMouseDown(c.id, e, true);
-                            }}
-                        >
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                        <>
+                            <div
+                                className={grabHandle}
+                                style={{ left: `${grabHandleLeftOffset}px` }}
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    handleCardMouseDown(c.id, e, true);
+                                }}
+                            >
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                    <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                                </div>
                             </div>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    left: `${grabHandleLeftOffset}px`,
+                                    top: '15px',
+                                    width: '28px',
+                                    height: '28px',
+                                    background: 'rgba(239, 68, 68, 0.95)',
+                                    borderRadius: '6px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    color: 'white',
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                    transition: 'all 0.2s',
+                                    zIndex: 1002,
+                                }}
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    // Break up the stack - unparent and spread cards horizontally
+                                    update(d => {
+                                        const allCards: CardEntity[] = [];
+                                        const collectDescendants = (parentId: string) => {
+                                            const children = d.cards.filter(card => card.parentId === parentId);
+                                            children.forEach(child => {
+                                                allCards.push(child);
+                                                collectDescendants(child.id);
+                                            });
+                                        };
+                                        
+                                        // Collect all descendants
+                                        collectDescendants(c.id);
+                                        
+                                        // Unparent and spread them horizontally
+                                        const CARD_SPACING = 180; // Horizontal spacing between cards
+                                        allCards.forEach((card, index) => {
+                                            card.parentId = undefined;
+                                            // Position cards horizontally to the right of the root card
+                                            card.x = c.x + (index + 1) * CARD_SPACING;
+                                            card.y = c.y; // Same Y position as root
+                                        });
+                                    });
+                                }}
+                                onMouseEnter={(e) => {
+                                    (e.target as HTMLElement).style.background = 'rgba(220, 38, 38, 1)';
+                                    (e.target as HTMLElement).style.transform = 'scale(1.15)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    (e.target as HTMLElement).style.background = 'rgba(239, 68, 68, 0.95)';
+                                    (e.target as HTMLElement).style.transform = 'scale(1)';
+                                }}
+                                title="Break up stack"
+                            >
+                                ✕
                             </div>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#374151' }} />
-                            </div>
-                        </div>
+                        </>
                     )}
                     <div
                         className={detailButton}
@@ -2782,6 +3018,16 @@ export default function BoardPage() {
                 );
             })()}
             
+            {/* Completed Button */}
+            <Link to="/completed" style={{ textDecoration: 'none' }}>
+                <button
+                    className={completedButton}
+                    title="View completed tasks"
+                >
+                    ✓
+                </button>
+            </Link>
+            
             {/* Help Button */}
             <button
                 className={helpButton}
@@ -2851,6 +3097,111 @@ export default function BoardPage() {
                         </button>
                     </div>
                 </>
+            )}
+            
+            {/* Debug Panel (Shift+D) */}
+            {st.showDebug && (
+                <div className={debugPanel}>
+                    <div className={debugTitle}>
+                        <span>🐛 Zombie Debug</span>
+                        <button
+                            onClick={() => update(d => { d.showDebug = false; })}
+                            style={{
+                                background: "none",
+                                border: "none",
+                                color: "#ff6b6b",
+                                cursor: "pointer",
+                                fontSize: "16px",
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    
+                    <div style={{ marginBottom: 12 }}>
+                        <strong>Total Zombies:</strong> {st.zombies.length}
+                    </div>
+                    
+                    {st.zombies.length === 0 ? (
+                        <div style={{ color: "rgba(255, 255, 255, 0.5)", fontStyle: "italic" }}>
+                            No zombies active 🎉
+                        </div>
+                    ) : (
+                        <>
+                            {st.zombies.map((z) => (
+                                <div key={z.id} className={debugZombieItem}>
+                                    <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                                        🧟 {z.id}
+                                    </div>
+                                    <div style={{ color: "rgba(255, 255, 255, 0.7)" }}>
+                                        <strong>Task:</strong> #{z.task_id}
+                                    </div>
+                                    <div style={{ color: "rgba(255, 255, 255, 0.7)" }}>
+                                        <strong>Reason:</strong> {z.reason.replace(/_/g, " ")}
+                                    </div>
+                                    <div style={{ color: "rgba(255, 255, 255, 0.5)", fontSize: "10px", marginTop: 4 }}>
+                                        Spawned: {new Date(z.spawned_at).toLocaleString()}
+                                    </div>
+                                    <button
+                                        className={button}
+                                        style={{ 
+                                            marginTop: 8, 
+                                            padding: "4px 8px", 
+                                            fontSize: "10px",
+                                            background: "linear-gradient(180deg, #ef4444, #dc2626)"
+                                        }}
+                                        onClick={async () => {
+                                            try {
+                                                await api.clearZombie(z.id, 2);
+                                                await refresh();
+                                            } catch (e) {
+                                                console.error("Failed to clear zombie:", e);
+                                            }
+                                        }}
+                                    >
+                                        Clear (costs 2 stamina)
+                                    </button>
+                                </div>
+                            ))}
+                            
+                            <button
+                                className={button}
+                                style={{ 
+                                    width: "100%", 
+                                    marginTop: 12,
+                                    background: "linear-gradient(180deg, #dc2626, #991b1b)"
+                                }}
+                                onClick={async () => {
+                                    if (!confirm(`Clear all ${st.zombies.length} zombies?`)) return;
+                                    try {
+                                        for (const z of st.zombies) {
+                                            await api.clearZombie(z.id, 2);
+                                        }
+                                        await refresh();
+                                    } catch (e) {
+                                        console.error("Failed to clear zombies:", e);
+                                    }
+                                }}
+                            >
+                                Clear All Zombies
+                            </button>
+                        </>
+                    )}
+                    
+                    <div style={{ 
+                        marginTop: 16, 
+                        paddingTop: 12, 
+                        borderTop: "1px solid rgba(255, 0, 0, 0.2)",
+                        fontSize: "10px",
+                        color: "rgba(255, 255, 255, 0.5)"
+                    }}>
+                        Press <kbd style={{ 
+                            background: "rgba(255, 255, 255, 0.1)", 
+                            padding: "2px 4px", 
+                            borderRadius: "3px" 
+                        }}>Shift+D</kbd> to toggle
+                    </div>
+                </div>
             )}
             
             {/* Tooltip */}

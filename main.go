@@ -91,7 +91,7 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 	// Seed decks
 	_ = deckRepo.Seed(ctx, []deck.Deck{
 		{ID: "deck_first_day", Type: deck.TypeFirstDay, Name: "First Day Deck", Description: "Bootstrap deck", Status: deck.StatusUnlocked, BaseCost: 0, TimesOpened: 0},
-		{ID: "deck_organization", Type: deck.TypeOrganization, Name: "Organization Deck", Description: "Workflow modifiers", Status: deck.StatusUnlocked, BaseCost: 2, TimesOpened: 0},
+		{ID: "deck_organization", Type: deck.TypeOrganization, Name: "Organization Deck", Description: "Workflow modifiers", Status: deck.StatusLocked, BaseCost: 2, TimesOpened: 0},
 		{ID: "deck_maintenance", Type: deck.TypeMaintenance, Name: "Maintenance Deck", Description: "Upkeep tools", Status: deck.StatusLocked, BaseCost: 3, TimesOpened: 0},
 		{ID: "deck_planning", Type: deck.TypePlanning, Name: "Planning Deck", Description: "Progress materials", Status: deck.StatusLocked, BaseCost: 4, TimesOpened: 0},
 		{ID: "deck_integration", Type: deck.TypeIntegration, Name: "Integration Deck", Description: "Advanced materials", Status: deck.StatusLocked, BaseCost: 6, TimesOpened: 0},

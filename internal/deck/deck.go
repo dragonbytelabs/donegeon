@@ -89,14 +89,14 @@ var Definitions = map[Type]Definition{
 		Description: "Bootstrap deck",
 		BaseCost:    0,
 		Contents: []ContentEntry{
-			{Type: "blank_task", Weight: 30},
-			{Type: "blank_task", Weight: 20},
-			{Type: "loot", Weight: 15, LootType: loot.Coin, LootAmount: 2},
+			{Type: "blank_task", Weight: 35}, // Increased: more tasks to get started
+			{Type: "blank_task", Weight: 25},
+			{Type: "loot", Weight: 18, LootType: loot.Coin, LootAmount: 3}, // More coins, higher amount
 			{Type: "loot", Weight: 10, LootType: loot.Paper, LootAmount: 1},
 			{Type: "loot", Weight: 5, LootType: loot.Ink, LootAmount: 1},
-			{Type: "resource", Weight: 15, ResourceType: "berry_bush", ResourceCharges: 3, ResourceGatherTime: 3, ResourceProduces: "berries", ResourceStaminaRestore: 1},
-			{Type: "resource", Weight: 4, ResourceType: "mushroom_patch", ResourceCharges: 2, ResourceGatherTime: 4, ResourceProduces: "mushroom", ResourceStaminaRestore: 2},
-			{Type: "modifier", Weight: 1, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
+			{Type: "loot", Weight: 5, LootType: loot.Coin, LootAmount: 1}, // Small coin drops too
+			{Type: "resource", Weight: 1, ResourceType: "berry_bush", ResourceCharges: 3, ResourceGatherTime: 3, ResourceProduces: "berries", ResourceStaminaRestore: 1}, // Reduced: less food spam
+			{Type: "modifier", Weight: 1, ModifierType: modifier.RecurringContract, ModifierCharges: 4},                                                                  // Rare modifier
 		},
 	},
 	TypeOrganization: {
@@ -107,10 +107,12 @@ var Definitions = map[Type]Definition{
 		Contents: []ContentEntry{
 			{Type: "modifier", Weight: 30, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
 			{Type: "modifier", Weight: 25, ModifierType: modifier.DeadlinePin, ModifierCharges: 0},
-			{Type: "modifier", Weight: 20, ModifierType: modifier.ScheduleToken, ModifierCharges: 2},
+			{Type: "modifier", Weight: 20, ModifierType: modifier.ImportanceSeal, ModifierCharges: 3}, // Added Importance Seal
+			{Type: "modifier", Weight: 15, ModifierType: modifier.ScheduleToken, ModifierCharges: 2},
 			{Type: "loot", Weight: 15, LootType: loot.Paper, LootAmount: 2},
 			{Type: "loot", Weight: 10, LootType: loot.Ink, LootAmount: 1},
-			{Type: "resource", Weight: 8, ResourceType: "wheat_field", ResourceCharges: 4, ResourceGatherTime: 5, ResourceProduces: "bread", ResourceStaminaRestore: 2},
+			{Type: "blank_task", Weight: 5}, // Some tasks in advanced deck
+			{Type: "resource", Weight: 5, ResourceType: "wheat_field", ResourceCharges: 4, ResourceGatherTime: 5, ResourceProduces: "bread", ResourceStaminaRestore: 2},
 		},
 	},
 	TypeMaintenance: {

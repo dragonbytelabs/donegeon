@@ -90,10 +90,16 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 	}
 
 	zSpawned := 0
+	const maxZombiesPerDay = 5 // Cap to prevent overwhelming the player
 
 	for _, t := range liveTasks {
 		if t.Completed {
 			continue
+		}
+
+		// Stop spawning if we've hit the daily cap
+		if zSpawned >= maxZombiesPerDay {
+			break
 		}
 
 		mods, err := e.getTaskMods(ctx, t)
@@ -104,7 +110,7 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 		// deadline missed
 		if mods.Deadline != nil && mods.Deadline.DeadlineAt != nil && now.After(*mods.Deadline.DeadlineAt) {
 			exists, _ := e.Zombies.ExistsForTask(ctx, t.ID, zombie.ReasonDeadlineMissed)
-			if !exists {
+			if !exists && zSpawned < maxZombiesPerDay {
 				_ = e.Zombies.Add(ctx, zombie.Zombie{
 					ID:        fmt.Sprintf("z_%d_deadline_%d", t.ID, now.Unix()),
 					TaskID:    t.ID,
@@ -116,7 +122,7 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 		}
 
 		// important ignored too long (only if seal exists)
-		if mods.Important != nil {
+		if mods.Important != nil && zSpawned < maxZombiesPerDay {
 			ignoreDays := 2
 			if mods.Important.MaxCharges > 0 && mods.Important.Charges > 0 {
 				ignoreDays = 1
@@ -152,7 +158,7 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 			c.RecurringNextAt = &nextAt
 
 			// If empty => spawn zombie once
-			if c.Spent() {
+			if c.Spent() && zSpawned < maxZombiesPerDay {
 				exists, _ := e.Zombies.ExistsForTask(ctx, t.ID, zombie.ReasonRecurringNoCharges)
 				if !exists {
 					_ = e.Zombies.Add(ctx, zombie.Zombie{
@@ -261,6 +267,27 @@ func (e Engine) Progress(ctx context.Context) error {
 	// The new quest system tracks progress through Objectives and Progress arrays
 	// instead of the old Progress(tasks) method
 	return nil
+}
+
+// TrackTaskProcessed increments the tasks processed counter and checks for deck unlocks
+func (e Engine) TrackTaskProcessed(ctx context.Context) error {
+	w, err := e.World.Get(ctx)
+	if err != nil {
+		return err
+	}
+
+	w.TasksProcessed++
+
+	// Check for Organization Deck unlock at 10 tasks
+	if w.TasksProcessed == 10 {
+		deck, ok, err := e.Decks.Get(ctx, "deck_organization")
+		if err == nil && ok && deck.Status == "locked" {
+			deck.Status = "unlocked"
+			_ = e.Decks.Update(ctx, deck)
+		}
+	}
+
+	return e.World.Set(ctx, w)
 }
 
 type CraftResult struct {
@@ -740,6 +767,9 @@ func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResul
 		if err == nil && w.LootPenaltyPct > 0 {
 			drops = loot.ApplyPenalty(drops, w.LootPenaltyPct)
 		}
+
+		// TODO: Add salvage logic when modifiers have task_id field
+		// For now, spent modifiers just stop working but don't salvage
 
 		// Add loot to inventory
 		if len(drops) > 0 {

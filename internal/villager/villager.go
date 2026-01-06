@@ -34,8 +34,14 @@ func (v *Villager) IsAvailable() bool {
 func (v *Villager) CompleteTask() bool {
 	v.TasksCompleted++
 
-	// Level up every 5 tasks
-	tasksForNextLevel := v.Level * 5
+	// Level up every 2 tasks at level 1, then every 5 tasks after
+	var tasksForNextLevel int
+	if v.Level == 1 {
+		tasksForNextLevel = 2
+	} else {
+		tasksForNextLevel = 2 + (v.Level-1)*5
+	}
+
 	if v.TasksCompleted >= tasksForNextLevel {
 		v.Level++
 		// Increase max stamina on level up

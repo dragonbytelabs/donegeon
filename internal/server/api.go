@@ -207,6 +207,8 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 
+		// Track task processing for unlock system
+		_ = engine.TrackTaskProcessed(r.Context())
 		_ = engine.Progress(r.Context())
 		writeJSON(w, t)
 	})
@@ -248,8 +250,11 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		}
 
 		// Move task to live if it's in inbox
-		if t.Zone == task.ZoneInbox {
+		wasInbox := t.Zone == task.ZoneInbox
+		if wasInbox {
 			t.MoveToLive()
+			// Track task processing for unlock system
+			_ = engine.TrackTaskProcessed(r.Context())
 		}
 
 		// Start work tracking if not already started
@@ -901,6 +906,49 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 		writeJSON(w, decks)
+	})
+
+	Handle(mux, rr, "GET /api/decks/{id}/preview", "Preview deck contents (possible drops, not guaranteed)", "", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		d, ok, err := deckRepo.Get(r.Context(), id)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if !ok {
+			http.Error(w, "deck not found", 404)
+			return
+		}
+
+		// Get deck definition to show possible contents
+		def, ok := deck.Definitions[d.Type]
+		if !ok {
+			http.Error(w, "deck definition not found", 500)
+			return
+		}
+
+		// Build preview showing all possible card types and their weights
+		type PreviewItem struct {
+			Type   string `json:"type"`
+			Weight int    `json:"weight"`
+		}
+
+		var preview []PreviewItem
+		for _, entry := range def.Contents {
+			preview = append(preview, PreviewItem{
+				Type:   entry.Type,
+				Weight: entry.Weight,
+			})
+		}
+
+		writeJSON(w, map[string]interface{}{
+			"deck_id":      id,
+			"deck_name":    d.Name,
+			"description":  d.Description,
+			"base_cost":    d.BaseCost,
+			"times_opened": d.TimesOpened,
+			"contents":     preview,
+		})
 	})
 
 	Handle(mux, rr, "POST /api/decks/{id}/open", "Open a deck/pack", "", func(w http.ResponseWriter, r *http.Request) {
