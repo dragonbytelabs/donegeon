@@ -11,6 +11,7 @@ export type Task = {
   modifier_ids: string[];
   live_at?: string | null;
   assigned_villager?: string | null;
+  project_id?: number | null;
 };
 
 export type ModifierType =
@@ -91,6 +92,20 @@ export type DayTickResult = {
   loot_penalty_pct: number;
   pack_cost_pct: number;
   overrun: boolean;
+};
+
+export type TodaySummary = {
+  day: string;
+  villagers_free: number;
+  villagers_blocked: number;
+  villagers_total: number;
+  slots_available: number;
+  tasks_live: number;
+  tasks_completed_today: number;
+  zombies_active: number;
+  danger_level: "safe" | "warning" | "danger" | "overrun";
+  loot_penalty_pct: number;
+  pack_cost_pct: number;
 };
 
 export type ClearZombieResult = {
@@ -181,4 +196,14 @@ export type Building = {
   description: string;
   effect: string;
   status: BuildingStatus;
+};
+
+export type Project = {
+  id: number;
+  name: string;
+  description: string;
+  color?: string;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
 };

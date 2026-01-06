@@ -12,6 +12,7 @@ import type {
     Building,
     ModifierCard,
     Quest,
+    TodaySummary,
 } from "../lib/types";
 
 // Stacklands-style board
@@ -629,6 +630,7 @@ type State = {
     quests: Quest[];
     decks: Deck[];
     buildings: Building[];
+    todaySummary: TodaySummary | null;
 
     // Drag state
     dragging: string | null;
@@ -660,6 +662,7 @@ export default function BoardPage() {
         quests: [],
         decks: [],
         buildings: [],
+        todaySummary: null,
         dragging: null,
         dragOffsetX: 0,
         dragOffsetY: 0,
@@ -780,7 +783,7 @@ export default function BoardPage() {
         });
 
         try {
-            const [inventory, villagers, tasks, zombies, decks, buildings, quests] = await Promise.all([
+            const [inventory, villagers, tasks, zombies, decks, buildings, quests, todaySummary] = await Promise.all([
                 api.loot(),
                 api.villagers(),
                 api.listTasks(),
@@ -788,6 +791,7 @@ export default function BoardPage() {
                 api.listDecks(),
                 api.listBuildings(),
                 api.listQuests(),
+                api.today(),
             ]);
 
             update((d) => {
@@ -798,6 +802,7 @@ export default function BoardPage() {
                 d.decks = decks;
                 d.buildings = buildings;
                 d.quests = quests;
+                d.todaySummary = todaySummary;
                 d.loading = false;
 
                 // Filter to only live tasks that aren't completed
@@ -2388,6 +2393,47 @@ export default function BoardPage() {
             );
         }
 
+        if (c.type === "zombie") {
+            const z = c.data as Zombie;
+            const reasonIcons: Record<string, string> = {
+                deadline_missed: "⏰",
+                important_ignored: "⚠️",
+                recurring_no_charges: "🔁",
+            };
+            const reasonLabels: Record<string, string> = {
+                deadline_missed: "Deadline Missed",
+                important_ignored: "Important Ignored",
+                recurring_no_charges: "Recurring Failed",
+            };
+
+            return (
+                <div
+                    className={card}
+                    style={{
+                        ...style,
+                        background: "linear-gradient(180deg, #7f1d1d, #991b1b)",
+                        borderColor: "#dc2626",
+                        borderWidth: "3px",
+                        color: "white",
+                    }}
+                    onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                    onMouseEnter={() => update(d => { d.hoveredCard = c.id; })}
+                    onMouseLeave={() => update(d => { d.hoveredCard = null; })}
+                >
+                    <div className={cardHeader} style={{ background: "linear-gradient(180deg, rgba(220, 38, 38, 0.3), transparent)", color: "white" }}>
+                        Zombie
+                    </div>
+                    <div className={cardBody}>
+                        <div className={cardIcon} style={{ fontSize: "40px" }}>🧟</div>
+                        <div className={cardTitle} style={{ color: "white" }}>{reasonLabels[z.reason] || z.reason}</div>
+                        <div className={cardSubtitle} style={{ color: "rgba(255, 255, 255, 0.7)", fontSize: "10px" }}>
+                            {reasonIcons[z.reason] || "💀"} Task #{z.task_id}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         return null;
     }
 
@@ -2463,6 +2509,36 @@ export default function BoardPage() {
             {/* Left HUD - Daily Objectives */}
             <div className={leftHud}>
                 <div className={hudTitle}>📋 Today's Goals</div>
+
+                {st.todaySummary && (
+                    <div className={hudSection}>
+                        <div className={hudLabel}>Today Summary</div>
+                        <div style={{ fontSize: 12, lineHeight: 1.7, color: "rgba(255,255,255,0.9)" }}>
+                            <div style={{ 
+                                marginBottom: 6, 
+                                padding: "6px 8px",
+                                background: st.todaySummary.danger_level === "safe" ? "rgba(34, 197, 94, 0.15)" :
+                                           st.todaySummary.danger_level === "warning" ? "rgba(251, 191, 36, 0.15)" :
+                                           st.todaySummary.danger_level === "danger" ? "rgba(239, 68, 68, 0.15)" :
+                                           "rgba(127, 29, 29, 0.15)",
+                                borderRadius: "4px",
+                                border: st.todaySummary.danger_level === "safe" ? "1px solid rgba(34, 197, 94, 0.3)" :
+                                        st.todaySummary.danger_level === "warning" ? "1px solid rgba(251, 191, 36, 0.3)" :
+                                        st.todaySummary.danger_level === "danger" ? "1px solid rgba(239, 68, 68, 0.3)" :
+                                        "1px solid rgba(127, 29, 29, 0.3)"
+                            }}>
+                                <strong>Danger:</strong> {st.todaySummary.danger_level.toUpperCase()}
+                            </div>
+                            <div><strong>Villagers:</strong> {st.todaySummary.villagers_free} free / {st.todaySummary.villagers_total} total</div>
+                            <div><strong>Tasks:</strong> {st.todaySummary.tasks_live} live • {st.todaySummary.tasks_completed_today} completed today</div>
+                            {st.todaySummary.zombies_active > 0 && (
+                                <div style={{ color: "#ff4444" }}>
+                                    <strong>⚠️ Zombies:</strong> {st.todaySummary.zombies_active} active
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 <div className={hudSection}>
                     <div className={hudLabel}>Villager Stamina</div>

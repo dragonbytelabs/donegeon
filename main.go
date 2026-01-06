@@ -11,6 +11,7 @@ import (
 	"donegeon/internal/game"
 	"donegeon/internal/loot"
 	"donegeon/internal/modifier"
+	"donegeon/internal/project"
 	"donegeon/internal/quest"
 	"donegeon/internal/recipe"
 	"donegeon/internal/server"
@@ -54,6 +55,7 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 	lootRepo := loot.NewMemoryRepo()
 	deckRepo := deck.NewMemoryRepo()
 	buildingRepo := building.NewMemoryRepo()
+	projectRepo := project.NewMemoryRepo()
 	cardRepo := game.NewMemoryCardRepo()
 	gameStateRepo := game.NewMemoryGameStateRepo()
 
@@ -222,6 +224,7 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 		LootRepo:     lootRepo,
 		DeckRepo:     deckRepo,
 		BuildingRepo: buildingRepo,
+		ProjectRepo:  projectRepo,
 		BootNow:      bootNow,
 	}, nil
 }

@@ -10,6 +10,7 @@ import BoardPage from "./pages/BoardPage";
 import LivePage from "./pages/LivePage";
 import WorldPage from "./pages/WorldPage";
 import QuestsPage from "./pages/QuestsPage";
+import ProjectsPage from "./pages/ProjectsPage";
 
 const router = createBrowserRouter([
   {
@@ -44,6 +45,10 @@ const router = createBrowserRouter([
       {
         path: "world",
         Component: WorldPage,
+      },
+      {
+        path: "projects",
+        Component: ProjectsPage,
       },
       {
         path: "board",

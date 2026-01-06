@@ -14,6 +14,7 @@ import (
 	"donegeon/internal/game"
 	"donegeon/internal/loot"
 	"donegeon/internal/modifier"
+	"donegeon/internal/project"
 	"donegeon/internal/quest"
 	"donegeon/internal/recipe"
 	"donegeon/internal/task"
@@ -38,6 +39,7 @@ type App struct {
 	LootRepo     *loot.MemoryRepo
 	DeckRepo     *deck.MemoryRepo
 	BuildingRepo *building.MemoryRepo
+	ProjectRepo  *project.MemoryRepo
 
 	BootNow time.Time
 }
@@ -98,6 +100,7 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 	lootRepo := app.LootRepo
 	deckRepo := app.DeckRepo
 	buildingRepo := app.BuildingRepo
+	projectRepo := app.ProjectRepo
 
 	// List tasks
 	Handle(mux, rr, "GET /api/tasks", "List tasks", "", func(w http.ResponseWriter, r *http.Request) {
@@ -208,14 +211,20 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		writeJSON(w, t)
 	})
 
-	Handle(mux, rr, "POST /api/tasks/process", "Process a task (mark as worked today)", `{"task_id":1,"villager_id":"v1"}`, func(w http.ResponseWriter, r *http.Request) {
+	Handle(mux, rr, "POST /api/tasks/process", "Process a task (mark as worked today)", `{"task_id":1,"villager_id":"v1","hours_worked":1}`, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			TaskID     int    `json:"task_id"`
-			VillagerID string `json:"villager_id"`
+			TaskID      int     `json:"task_id"`
+			VillagerID  string  `json:"villager_id"`
+			HoursWorked float64 `json:"hours_worked"` // How many hours of work (default 1)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid json body", 400)
 			return
+		}
+
+		// Default to 1 hour if not specified
+		if body.HoursWorked <= 0 {
+			body.HoursWorked = 1
 		}
 
 		// Get the task
@@ -243,6 +252,12 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			t.MoveToLive()
 		}
 
+		// Start work tracking if not already started
+		t.StartWork()
+
+		// Add work progress based on villager speed
+		isComplete := t.AddWorkProgress(v.Speed, body.HoursWorked)
+
 		// Consume 1 stamina from villager
 		v.Stamina--
 		if _, err := villagerRepo.Update(r.Context(), v); err != nil {
@@ -250,10 +265,27 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 
-		// Update task
-		if _, err := taskRepo.Update(r.Context(), t); err != nil {
-			http.Error(w, fmt.Sprintf("failed to update task: %v", err), 500)
-			return
+		// If task is complete, mark it as completed
+		if isComplete {
+			_, err := engine.CompleteTask(r.Context(), t.ID)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("failed to complete task: %v", err), 500)
+				return
+			}
+
+			// Update quest progress after completing task
+			if app.QuestService != nil {
+				_ = app.QuestService.RefreshProgress(r.Context())
+			}
+
+			// Re-fetch the completed task
+			t, _, _ = taskRepo.Get(r.Context(), body.TaskID)
+		} else {
+			// Update task with progress
+			if _, err := taskRepo.Update(r.Context(), t); err != nil {
+				http.Error(w, fmt.Sprintf("failed to update task: %v", err), 500)
+				return
+			}
 		}
 
 		writeJSON(w, map[string]any{
@@ -261,6 +293,44 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			"task":     t,
 			"villager": v,
 		})
+	})
+
+	Handle(mux, rr, "POST /api/tasks/set-project", "Assign task to project", `{"task_id":1,"project_id":2}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			TaskID    int  `json:"task_id"`
+			ProjectID *int `json:"project_id"` // null to unassign
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+
+		// Get the task
+		t, found, err := taskRepo.Get(r.Context(), body.TaskID)
+		if err != nil || !found {
+			http.Error(w, "task not found", 404)
+			return
+		}
+
+		// If project_id is provided, verify it exists
+		if body.ProjectID != nil {
+			_, found, err := projectRepo.Get(r.Context(), *body.ProjectID)
+			if err != nil || !found {
+				http.Error(w, "project not found", 404)
+				return
+			}
+		}
+
+		// Assign project
+		t.ProjectID = body.ProjectID
+
+		// Update task
+		if _, err := taskRepo.Update(r.Context(), t); err != nil {
+			http.Error(w, fmt.Sprintf("failed to update task: %v", err), 500)
+			return
+		}
+
+		writeJSON(w, t)
 	})
 
 	Handle(mux, rr, "POST /api/tasks/reorder", "Reorder tasks", `{"source_id":1,"target_id":2}`, func(w http.ResponseWriter, r *http.Request) {
@@ -870,6 +940,57 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		writeJSON(w, result)
 	})
 
+	// Project endpoints
+	Handle(mux, rr, "GET /api/projects", "List all projects", "", func(w http.ResponseWriter, r *http.Request) {
+		projects, err := projectRepo.List(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, projects)
+	})
+
+	Handle(mux, rr, "POST /api/projects", "Create a project", `{"name":"My Project","description":"Project description"}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+
+		proj, err := projectRepo.Create(r.Context(), body.Name, body.Description)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, proj)
+	})
+
+	Handle(mux, rr, "POST /api/projects/{id}/archive", "Archive a project", "", func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "invalid project id", 400)
+			return
+		}
+
+		proj, ok, err := projectRepo.Get(r.Context(), id)
+		if err != nil || !ok {
+			http.Error(w, "project not found", 404)
+			return
+		}
+
+		proj.Archive()
+		proj, err = projectRepo.Update(r.Context(), proj)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, proj)
+	})
+
 	// Game state endpoints
 	Handle(mux, rr, "GET /api/game/state", "Get game state", "", func(w http.ResponseWriter, r *http.Request) {
 		state, err := engine.GameState.Get(r.Context())
@@ -887,6 +1008,15 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 		writeJSON(w, map[string]int{"remaining_undrawn": count})
+	})
+
+	Handle(mux, rr, "GET /api/today", "Get today's summary", "", func(w http.ResponseWriter, r *http.Request) {
+		summary, err := engine.TodaySummary(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, summary)
 	})
 
 	// Card management endpoints

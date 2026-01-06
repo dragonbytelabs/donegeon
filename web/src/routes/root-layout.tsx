@@ -16,6 +16,7 @@ export default function RootLayout() {
         <Link to="/quests">Quests</Link>
         <Link to="/live">Live</Link>
         <Link to="/world">World</Link>
+        <Link to="/projects">Projects</Link>
         <Link 
           to="/board" 
           style={{ 

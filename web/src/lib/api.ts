@@ -7,13 +7,14 @@ import type {
   Zombie,
   World,
   DayTickResult,
+  TodaySummary,
   ClearZombieResult,
   ModifierType,
   Inventory,
   Deck,
   OpenDeckResult,
   Building,
-  CompleteTaskResult,
+  CompleteTaskResult,  Project,  Project,
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -71,6 +72,12 @@ export const api = {
     request<Task>("/api/tasks/move-to-live", {
       method: "POST",
       body: JSON.stringify({ id }),
+    }),
+
+  setTaskProject: (task_id: number, project_id: number | null) =>
+    request<Task>("/api/tasks/set-project", {
+      method: "POST",
+      body: JSON.stringify({ task_id, project_id }),
     }),
 
   taskModifiers: (id: number) =>
@@ -146,6 +153,9 @@ export const api = {
       body: JSON.stringify({ loot_type, amount }),
     }),
 
+  // today summary
+  today: () => request<TodaySummary>("/api/today"),
+
   // decks
   listDecks: () => request<Deck[]>("/api/decks"),
   openDeck: (deck_id: string) =>
@@ -178,5 +188,19 @@ export const api = {
     request<any>("/api/recipes/execute", {
       method: "POST",
       body: JSON.stringify({ task_id_1, task_id_2 }),
+    }),
+
+  // projects
+  listProjects: () => request<Project[]>("/api/projects"),
+  
+  createProject: (name: string, description: string) =>
+    request<Project>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ name, description }),
+    }),
+
+  archiveProject: (id: number) =>
+    request<Project>(`/api/projects/${id}/archive`, {
+      method: "POST",
     }),
 };

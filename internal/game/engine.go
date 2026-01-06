@@ -45,6 +45,20 @@ type DayTickResult struct {
 	Overrun          bool   `json:"overrun"`
 }
 
+type TodaySummary struct {
+	Day              string `json:"day"`
+	VillagersFree    int    `json:"villagers_free"`
+	VillagersBlocked int    `json:"villagers_blocked"`
+	VillagersTotal   int    `json:"villagers_total"`
+	SlotsAvailable   int    `json:"slots_available"`
+	TasksLive        int    `json:"tasks_live"`
+	TasksCompleted   int    `json:"tasks_completed_today"`
+	ZombiesActive    int    `json:"zombies_active"`
+	DangerLevel      string `json:"danger_level"` // "safe", "warning", "danger", "overrun"
+	LootPenaltyPct   int    `json:"loot_penalty_pct"`
+	PackCostPct      int    `json:"pack_cost_pct"`
+}
+
 func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 	w, err := e.World.Get(ctx)
 	if err != nil {
@@ -195,6 +209,25 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 	lootPenalty := min(50, zTotal*10)
 	packCost := min(100, zTotal*15)
 	overrun := zTotal >= 5
+
+	// Apply tired status to villagers if zombie count is high
+	if zTotal >= 4 {
+		// Get all villagers
+		villagers, err := e.Villagers.List(ctx)
+		if err == nil {
+			// Make villagers tired for 1 day for every 2 zombies over 3
+			daysToTire := (zTotal - 3) / 2
+			if daysToTire < 1 {
+				daysToTire = 1
+			}
+			tiredUntil := w.Day.AddDate(0, 0, daysToTire)
+
+			for i := range villagers {
+				villagers[i].MakeTired(tiredUntil)
+			}
+			_ = e.Villagers.UpdateMany(ctx, villagers)
+		}
+	}
 
 	w.LootPenaltyPct = lootPenalty
 	w.PackCostPct = packCost
@@ -667,6 +700,17 @@ func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResul
 		return CompleteTaskResult{}, err
 	}
 
+	// Grant XP to assigned villager
+	if t.AssignedVillager != "" {
+		v, found, err := e.Villagers.Get(ctx, t.AssignedVillager)
+		if err == nil && found {
+			leveledUp := v.CompleteTask()
+			if _, err := e.Villagers.Update(ctx, v); err == nil && leveledUp {
+				// Could add level up notification here
+			}
+		}
+	}
+
 	// Generate loot drops based on task type
 	var drops []loot.Drop
 	if t.Zone == task.ZoneLive {
@@ -880,4 +924,76 @@ func (e Engine) ConstructBuilding(ctx context.Context, buildingType building.Typ
 	}
 
 	return b, nil
+}
+
+func (e Engine) TodaySummary(ctx context.Context) (TodaySummary, error) {
+	w, err := e.World.Get(ctx)
+	if err != nil {
+		return TodaySummary{}, err
+	}
+
+	// Count villagers
+	villagers, err := e.Villagers.List(ctx)
+	if err != nil {
+		return TodaySummary{}, err
+	}
+
+	villagersFree := 0
+	villagersBlocked := 0
+	for _, v := range villagers {
+		if v.IsAvailable() {
+			villagersFree++
+		} else {
+			villagersBlocked++
+		}
+	}
+
+	// Count tasks
+	liveTasks, err := e.Tasks.ListByZone(ctx, task.ZoneLive)
+	if err != nil {
+		return TodaySummary{}, err
+	}
+
+	completedTasks, err := e.Tasks.CountCompletedToday(ctx)
+	if err != nil {
+		completedTasks = 0 // Don't fail on this
+	}
+
+	// Count zombies
+	zombieCount, err := e.Zombies.Count(ctx)
+	if err != nil {
+		return TodaySummary{}, err
+	}
+
+	// Calculate danger level
+	dangerLevel := "safe"
+	if zombieCount >= 5 {
+		dangerLevel = "overrun"
+	} else if zombieCount >= 3 {
+		dangerLevel = "danger"
+	} else if zombieCount > 0 {
+		dangerLevel = "warning"
+	}
+
+	// Calculate slots (simplified: 1 slot per villager, reduced by zombies)
+	baseSlots := len(villagers)
+	zombiePenalty := zombieCount / 2
+	slotsAvailable := baseSlots - zombiePenalty
+	if slotsAvailable < 0 {
+		slotsAvailable = 0
+	}
+
+	return TodaySummary{
+		Day:              w.Day.Format("2006-01-02"),
+		VillagersFree:    villagersFree,
+		VillagersBlocked: villagersBlocked,
+		VillagersTotal:   len(villagers),
+		SlotsAvailable:   slotsAvailable,
+		TasksLive:        len(liveTasks),
+		TasksCompleted:   completedTasks,
+		ZombiesActive:    zombieCount,
+		DangerLevel:      dangerLevel,
+		LootPenaltyPct:   w.LootPenaltyPct,
+		PackCostPct:      w.PackCostPct,
+	}, nil
 }
