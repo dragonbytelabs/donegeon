@@ -1,6 +1,6 @@
 # 🎮 DONEGEON
 
-![Game View](docs/screenshots/board.png)
+![Game View](docs/screenshots/v0.1.png)
 
 **A Task management game where productivity meets dungeon survival.**
 
