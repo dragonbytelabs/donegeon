@@ -8,17 +8,23 @@ export type Task = {
   completed: boolean;
   order: number;
   tags: string[];
+  priority?: number; // 0=none, 1=P1 (highest), 2=P2, 3=P3, 4=P4 (lowest)
   modifier_ids: string[];
   live_at?: string | null;
   assigned_villager?: string | null;
   project_id?: number | null;
+  is_blank?: boolean;
 };
 
 export type ModifierType =
   | "recurring_contract"
   | "deadline_pin"
   | "schedule_token"
-  | "importance_seal";
+  | "importance_seal"
+  | "waiting_on"
+  | "next_action"
+  | "review_cadence"
+  | "checklist";
 
 export type ModifierStatus = "active" | "spent";
 
@@ -36,6 +42,13 @@ export type ModifierCard = {
   scheduled_at?: string | null;
   recurring_every_days?: number | null;
   recurring_next_at?: string | null;
+
+  // New modifier fields
+  unblocked_at?: string | null; // WaitingOn
+  review_every_days?: number | null; // ReviewCadence
+  review_next_at?: string | null; // ReviewCadence
+  checklist_total?: number | null; // Checklist
+  checklist_completed?: number | null; // Checklist
 };
 
 export type ResourceCard = {

@@ -17,11 +17,22 @@ const (
 	ZoneArchived  Zone = "archived"
 )
 
+type Priority int
+
+const (
+	PriorityNone Priority = 0
+	Priority4    Priority = 4
+	Priority3    Priority = 3
+	Priority2    Priority = 2
+	Priority1    Priority = 1
+)
+
 type Task struct {
 	ID          int        `json:"id"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
 	Tags        []string   `json:"tags,omitempty"`
+	Priority    Priority   `json:"priority,omitempty"`   // 0=none, 1=highest, 4=lowest
 	ProjectID   *int       `json:"project_id,omitempty"` // Optional project assignment
 	Completed   bool       `json:"completed"`
 	Zone        Zone       `json:"zone"`

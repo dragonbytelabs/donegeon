@@ -166,6 +166,32 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 		writeJSON(w, t)
 	})
 
+	Handle(mux, rr, "POST /api/tasks/priority", "Set task priority", `{"id":1,"priority":1}`, func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ID       int `json:"id"`
+			Priority int `json:"priority"` // 0=none, 1=P1 (highest), 2=P2, 3=P3, 4=P4 (lowest)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid json body", 400)
+			return
+		}
+		if body.Priority < 0 || body.Priority > 4 {
+			http.Error(w, "priority must be 0-4", 400)
+			return
+		}
+		t, ok, err := taskRepo.SetPriority(r.Context(), body.ID, task.Priority(body.Priority))
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if !ok {
+			http.Error(w, "task not found", 404)
+			return
+		}
+		_ = engine.Progress(r.Context())
+		writeJSON(w, t)
+	})
+
 	Handle(mux, rr, "POST /api/tasks/complete", "Complete a task", `{"id":1}`, func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			ID int `json:"id"`
@@ -860,6 +886,116 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 				return
 			}
 			writeJSON(w, res)
+		},
+	)
+
+	// Modifier-specific updates
+	Handle(mux, rr, "POST /api/modifiers/waiting-on/set", "Set WaitingOn unblocked date",
+		`{"modifier_id":"m_123","unblocked_at":"2026-01-10T00:00:00Z"}`,
+		func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				ModifierID  string `json:"modifier_id"`
+				UnblockedAt string `json:"unblocked_at"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid json body", 400)
+				return
+			}
+
+			mod, ok, err := modifierRepo.Get(r.Context(), body.ModifierID)
+			if err != nil || !ok {
+				http.Error(w, "modifier not found", 404)
+				return
+			}
+
+			unblockedAt, err := time.Parse(time.RFC3339, body.UnblockedAt)
+			if err != nil {
+				http.Error(w, "invalid date format", 400)
+				return
+			}
+
+			mod.UnblockedAt = &unblockedAt
+			updated, err := modifierRepo.Update(r.Context(), mod)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			writeJSON(w, updated)
+		},
+	)
+
+	Handle(mux, rr, "POST /api/modifiers/checklist/increment", "Increment checklist progress",
+		`{"modifier_id":"m_123"}`,
+		func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				ModifierID string `json:"modifier_id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid json body", 400)
+				return
+			}
+
+			mod, ok, err := modifierRepo.Get(r.Context(), body.ModifierID)
+			if err != nil || !ok {
+				http.Error(w, "modifier not found", 404)
+				return
+			}
+
+			if mod.ChecklistCompleted < mod.ChecklistTotal {
+				mod.ChecklistCompleted++
+			}
+
+			updated, err := modifierRepo.Update(r.Context(), mod)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			writeJSON(w, updated)
+		},
+	)
+
+	Handle(mux, rr, "POST /api/modifiers/review/set", "Set ReviewCadence schedule",
+		`{"modifier_id":"m_123","review_every_days":7,"review_next_at":"2026-01-13T00:00:00Z"}`,
+		func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				ModifierID      string `json:"modifier_id"`
+				ReviewEveryDays int    `json:"review_every_days"`
+				ReviewNextAt    string `json:"review_next_at"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid json body", 400)
+				return
+			}
+
+			mod, ok, err := modifierRepo.Get(r.Context(), body.ModifierID)
+			if err != nil || !ok {
+				http.Error(w, "modifier not found", 404)
+				return
+			}
+
+			if body.ReviewEveryDays <= 0 {
+				http.Error(w, "review_every_days must be > 0", 400)
+				return
+			}
+
+			reviewNextAt, err := time.Parse(time.RFC3339, body.ReviewNextAt)
+			if err != nil {
+				http.Error(w, "invalid date format", 400)
+				return
+			}
+
+			mod.ReviewEveryDays = body.ReviewEveryDays
+			mod.ReviewNextAt = &reviewNextAt
+
+			updated, err := modifierRepo.Update(r.Context(), mod)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			writeJSON(w, updated)
 		},
 	)
 

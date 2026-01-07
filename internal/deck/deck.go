@@ -89,14 +89,12 @@ var Definitions = map[Type]Definition{
 		Description: "Bootstrap deck",
 		BaseCost:    0,
 		Contents: []ContentEntry{
-			{Type: "blank_task", Weight: 35}, // Increased: more tasks to get started
-			{Type: "blank_task", Weight: 25},
-			{Type: "loot", Weight: 18, LootType: loot.Coin, LootAmount: 3}, // More coins, higher amount
-			{Type: "loot", Weight: 10, LootType: loot.Paper, LootAmount: 1},
-			{Type: "loot", Weight: 5, LootType: loot.Ink, LootAmount: 1},
-			{Type: "loot", Weight: 5, LootType: loot.Coin, LootAmount: 1}, // Small coin drops too
-			{Type: "resource", Weight: 1, ResourceType: "berry_bush", ResourceCharges: 3, ResourceGatherTime: 3, ResourceProduces: "berries", ResourceStaminaRestore: 1}, // Reduced: less food spam
-			{Type: "modifier", Weight: 1, ModifierType: modifier.RecurringContract, ModifierCharges: 4},                                                                  // Rare modifier
+			{Type: "blank_task", Weight: 30},                               // Reduced from 60
+			{Type: "loot", Weight: 25, LootType: loot.Coin, LootAmount: 2}, // Reduced amount and weight
+			{Type: "loot", Weight: 15, LootType: loot.Paper, LootAmount: 1},
+			{Type: "resource", Weight: 15, ResourceType: "berry_bush", ResourceCharges: 3, ResourceGatherTime: 3, ResourceProduces: "berries", ResourceStaminaRestore: 1}, // Increased from 1
+			{Type: "modifier", Weight: 10, ModifierType: modifier.NextAction, ModifierCharges: 3},                                                                         // New: Next Action
+			{Type: "modifier", Weight: 5, ModifierType: modifier.Checklist, ModifierCharges: 2},                                                                           // New: Checklist
 		},
 	},
 	TypeOrganization: {
@@ -105,14 +103,12 @@ var Definitions = map[Type]Definition{
 		Description: "Workflow modifiers",
 		BaseCost:    2,
 		Contents: []ContentEntry{
-			{Type: "modifier", Weight: 30, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
-			{Type: "modifier", Weight: 25, ModifierType: modifier.DeadlinePin, ModifierCharges: 0},
-			{Type: "modifier", Weight: 20, ModifierType: modifier.ImportanceSeal, ModifierCharges: 3}, // Added Importance Seal
-			{Type: "modifier", Weight: 15, ModifierType: modifier.ScheduleToken, ModifierCharges: 2},
-			{Type: "loot", Weight: 15, LootType: loot.Paper, LootAmount: 2},
-			{Type: "loot", Weight: 10, LootType: loot.Ink, LootAmount: 1},
-			{Type: "blank_task", Weight: 5}, // Some tasks in advanced deck
-			{Type: "resource", Weight: 5, ResourceType: "wheat_field", ResourceCharges: 4, ResourceGatherTime: 5, ResourceProduces: "bread", ResourceStaminaRestore: 2},
+			{Type: "modifier", Weight: 25, ModifierType: modifier.NextAction, ModifierCharges: 4},    // New: GTD next action
+			{Type: "modifier", Weight: 25, ModifierType: modifier.ReviewCadence, ModifierCharges: 3}, // New: Regular reviews
+			{Type: "modifier", Weight: 20, ModifierType: modifier.Checklist, ModifierCharges: 3},     // New: Break down tasks
+			{Type: "modifier", Weight: 15, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
+			{Type: "modifier", Weight: 10, ModifierType: modifier.ImportanceSeal, ModifierCharges: 3},
+			{Type: "blank_task", Weight: 5},
 		},
 	},
 	TypeMaintenance: {
@@ -121,12 +117,12 @@ var Definitions = map[Type]Definition{
 		Description: "Upkeep tools",
 		BaseCost:    3,
 		Contents: []ContentEntry{
-			{Type: "modifier", Weight: 35, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
-			{Type: "modifier", Weight: 25, ModifierType: modifier.DeadlinePin, ModifierCharges: 0},
-			{Type: "loot", Weight: 20, LootType: loot.Gear, LootAmount: 2},
-			{Type: "loot", Weight: 15, LootType: loot.Coin, LootAmount: 3},
+			{Type: "modifier", Weight: 30, ModifierType: modifier.RecurringContract, ModifierCharges: 4},
+			{Type: "modifier", Weight: 25, ModifierType: modifier.WaitingOn, ModifierCharges: 2},     // New: Blocking tasks
+			{Type: "modifier", Weight: 20, ModifierType: modifier.ReviewCadence, ModifierCharges: 3}, // New: Regular reviews
+			{Type: "modifier", Weight: 15, ModifierType: modifier.DeadlinePin, ModifierCharges: 0},
+			{Type: "loot", Weight: 5, LootType: loot.Gear, LootAmount: 2},
 			{Type: "blank_task", Weight: 5},
-			{Type: "resource", Weight: 6, ResourceType: "herb_garden", ResourceCharges: 3, ResourceGatherTime: 6, ResourceProduces: "healing_herbs", ResourceStaminaRestore: 3},
 		},
 	},
 	TypePlanning: {
@@ -135,11 +131,11 @@ var Definitions = map[Type]Definition{
 		Description: "Progress materials",
 		BaseCost:    4,
 		Contents: []ContentEntry{
-			{Type: "loot", Weight: 30, LootType: loot.BlueprintShard, LootAmount: 1},
-			{Type: "loot", Weight: 25, LootType: loot.Paper, LootAmount: 3},
-			{Type: "loot", Weight: 20, LootType: loot.Parts, LootAmount: 2},
-			{Type: "modifier", Weight: 15, ModifierType: modifier.ScheduleToken, ModifierCharges: 2},
-			{Type: "loot", Weight: 10, LootType: loot.Coin, LootAmount: 5},
+			{Type: "modifier", Weight: 30, ModifierType: modifier.NextAction, ModifierCharges: 5}, // New: Lots of next actions
+			{Type: "modifier", Weight: 25, ModifierType: modifier.Checklist, ModifierCharges: 4},  // New: Project breakdowns
+			{Type: "modifier", Weight: 20, ModifierType: modifier.ScheduleToken, ModifierCharges: 2},
+			{Type: "loot", Weight: 15, LootType: loot.BlueprintShard, LootAmount: 1},
+			{Type: "loot", Weight: 10, LootType: loot.Paper, LootAmount: 3},
 		},
 	},
 	TypeIntegration: {

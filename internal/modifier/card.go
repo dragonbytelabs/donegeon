@@ -9,6 +9,10 @@ const (
 	DeadlinePin       Type = "deadline_pin"
 	ScheduleToken     Type = "schedule_token"
 	ImportanceSeal    Type = "importance_seal"
+	WaitingOn         Type = "waiting_on"
+	NextAction        Type = "next_action"
+	ReviewCadence     Type = "review_cadence"
+	Checklist         Type = "checklist"
 )
 
 type Status string
@@ -37,6 +41,13 @@ type Card struct {
 	ScheduledAt        *time.Time `json:"scheduled_at,omitempty"`         // ScheduleToken (v0.1 mostly for UI)
 	RecurringEveryDays int        `json:"recurring_every_days,omitempty"` // RecurringContract
 	RecurringNextAt    *time.Time `json:"recurring_next_at,omitempty"`    // RecurringContract
+
+	// New modifier fields
+	UnblockedAt        *time.Time `json:"unblocked_at,omitempty"`        // WaitingOn - when task becomes unblocked
+	ReviewEveryDays    int        `json:"review_every_days,omitempty"`   // ReviewCadence - days until review
+	ReviewNextAt       *time.Time `json:"review_next_at,omitempty"`      // ReviewCadence - next review date
+	ChecklistTotal     int        `json:"checklist_total,omitempty"`     // Checklist - total steps
+	ChecklistCompleted int        `json:"checklist_completed,omitempty"` // Checklist - completed steps
 }
 
 func (c Card) Persistent() bool { return c.MaxCharges == 0 }

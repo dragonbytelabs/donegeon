@@ -125,6 +125,21 @@ func (r *MemoryRepo) AddTag(ctx context.Context, id int, tag string) (Task, bool
 	return t, true, nil
 }
 
+func (r *MemoryRepo) SetPriority(ctx context.Context, id int, priority Priority) (Task, bool, error) {
+	_ = ctx
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	t, ok := r.tasks[id]
+	if !ok {
+		return Task{}, false, nil
+	}
+	t.Priority = priority
+	t.touch()
+	r.tasks[id] = t
+	return t, true, nil
+}
+
 func (r *MemoryRepo) Complete(ctx context.Context, id int) (Task, bool, error) {
 	_ = ctx
 	r.mu.Lock()

@@ -247,6 +247,92 @@ const searchResultType = css`
   letter-spacing: 0.5px;
 `;
 
+const tagEditorModal = css`
+  width: 400px;
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+`;
+
+const tagEditorTitle = css`
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+`;
+
+const tagEditorInput = css`
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 16px;
+  
+  &:focus {
+    border-color: rgba(139, 92, 246, 0.6);
+    background: rgba(255, 255, 255, 0.15);
+  }
+  
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+  }
+`;
+
+const tagEditorButtons = css`
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+`;
+
+const contextMenu = css`
+  position: fixed;
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  z-index: 300;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+`;
+
+const contextMenuItem = css`
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s;
+  color: white;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const contextMenuItemDanger = css`
+  padding: 10px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s;
+  color: #ef4444;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  
+  &:hover {
+    background: rgba(239, 68, 68, 0.1);
+  }
+`;
+
 const backButton = css`
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.1);
@@ -822,6 +908,14 @@ type State = {
     showMinimap: boolean;
     showSearch: boolean;
     searchQuery: string;
+    
+    // Context menu
+    contextMenu: { x: number; y: number; cardId: string } | null;
+    
+    // Tag/Priority editor
+    showTagEditor: boolean;
+    tagEditorCardId: string | null;
+    tagInputValue: string;
 };
 
 export default function BoardPage() {
@@ -854,6 +948,10 @@ export default function BoardPage() {
         showMinimap: false,
         showSearch: false,
         searchQuery: '',
+        contextMenu: null,
+        showTagEditor: false,
+        tagEditorCardId: null,
+        tagInputValue: '',
     });
 
     const boardRef = useRef<HTMLDivElement>(null);
@@ -1334,6 +1432,18 @@ export default function BoardPage() {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [refresh, openDeck, st.decks, update]);
+    
+    // Close context menu when clicking outside
+    useEffect(() => {
+        const handleClick = () => {
+            if (st.contextMenu) {
+                update(d => { d.contextMenu = null; });
+            }
+        };
+        
+        window.addEventListener('click', handleClick);
+        return () => window.removeEventListener('click', handleClick);
+    }, [st.contextMenu, update]);
 
     // Particle physics loop
     useEffect(() => {
@@ -1542,6 +1652,20 @@ export default function BoardPage() {
             window.addEventListener("mousemove", handleMove);
             window.addEventListener("mouseup", handleUp);
         }
+    };
+    
+    // Context menu handler
+    const handleCardContextMenu = (cardId: string, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        update(d => {
+            d.contextMenu = {
+                x: e.clientX,
+                y: e.clientY,
+                cardId: cardId
+            };
+        });
     };
 
     // Card drag
@@ -2307,6 +2431,21 @@ export default function BoardPage() {
                 }
             }
 
+            // No valid recipe found - show feedback
+            else {
+                const dragType = draggedCard.type === 'task' && draggedCard.data?.is_blank 
+                    ? 'blank task' 
+                    : draggedCard.type.replace('_', ' ');
+                const targetType = targetCard.type === 'task' && targetCard.data?.is_blank 
+                    ? 'blank task' 
+                    : targetCard.type.replace('_', ' ');
+                    
+                update((d) => {
+                    d.error = `✗ Cannot combine ${dragType} with ${targetType}`;
+                    setTimeout(() => update((d) => { d.error = null; }), 2000);
+                });
+            }
+
         } catch (e: any) {
             console.error("Drop error:", e);
             console.error("Error details:", e.message, e.stack);
@@ -2453,16 +2592,20 @@ export default function BoardPage() {
             left: `${c.x}px`,
             top: `${c.y}px`,
             zIndex: isDragging ? 1000 : isHoverTarget ? 500 : zIndexOffset,
+            opacity: isDragging ? 0.7 : 1, // Ghost effect while dragging
             boxShadow: isHoverTarget
                 ? getRecipePreview(st.cards.find(card => card.id === st.dragging)!, c)
                     ? '0 0 0 4px rgba(34, 197, 94, 0.6), 0 12px 32px rgba(34, 197, 94, 0.3)' // Green for valid
                     : '0 0 0 4px rgba(239, 68, 68, 0.6), 0 12px 32px rgba(239, 68, 68, 0.3)' // Red for invalid
+                : isDragging
+                ? '0 8px 32px rgba(0, 0, 0, 0.5)' // Shadow while dragging
                 : undefined,
             borderColor: isHovered ? 'white' : undefined,
             borderWidth: isHovered ? '3px' : undefined,
             borderStyle: isHovered ? 'solid' : undefined,
-            transform: isHoverTarget ? 'scale(1.05)' : undefined,
-            transition: isDragging ? 'none' : 'all 0.2s',
+            cursor: isDragging ? 'grabbing' : 'grab',
+            transform: isDragging ? 'rotate(-2deg) scale(1.05)' : isHoverTarget ? 'scale(1.05)' : undefined,
+            transition: isDragging ? 'none' : 'all 0.2s ease-out',
         };
 
         if (c.type === "villager") {
@@ -2480,6 +2623,7 @@ export default function BoardPage() {
                         borderWidth: "3px",
                     }}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e, hasChildren)}
+                    onContextMenu={(e) => handleCardContextMenu(c.id, e)}
                     onMouseEnter={() => update(d => { d.hoveredCard = c.id; })}
                     onMouseLeave={() => update(d => { d.hoveredCard = null; })}
                 >
@@ -2535,6 +2679,7 @@ export default function BoardPage() {
                     className={card}
                     style={style}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                    onContextMenu={(e) => handleCardContextMenu(c.id, e)}
                     onMouseEnter={() => update(d => { d.hoveredCard = c.id; })}
                     onMouseLeave={() => update(d => { d.hoveredCard = null; })}
                 >
@@ -2654,6 +2799,56 @@ export default function BoardPage() {
                     <div className={cardBody}>
                         <div className={cardIcon}>📋</div>
                         <div className={cardTitle}>{t.name}</div>
+                        
+                        {/* Priority indicator */}
+                        {t.priority && t.priority > 0 && (
+                            <div style={{
+                                display: 'inline-block',
+                                marginTop: '4px',
+                                padding: '2px 6px',
+                                borderRadius: '3px',
+                                fontSize: '9px',
+                                fontWeight: 700,
+                                background: t.priority === 1 ? '#ef4444' :
+                                           t.priority === 2 ? '#f59e0b' :
+                                           t.priority === 3 ? '#3b82f6' : '#6b7280',
+                                color: 'white',
+                            }}>
+                                P{t.priority}
+                            </div>
+                        )}
+                        
+                        {/* Tags */}
+                        {t.tags && t.tags.length > 0 && (
+                            <div style={{ marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {t.tags.slice(0, 3).map((tag, i) => (
+                                    <div
+                                        key={i}
+                                        style={{
+                                            padding: '2px 6px',
+                                            borderRadius: '3px',
+                                            fontSize: '9px',
+                                            fontWeight: 600,
+                                            background: 'rgba(139, 92, 246, 0.15)',
+                                            color: '#8b5cf6',
+                                            border: '1px solid rgba(139, 92, 246, 0.3)',
+                                        }}
+                                    >
+                                        #{tag}
+                                    </div>
+                                ))}
+                                {t.tags.length > 3 && (
+                                    <div style={{
+                                        padding: '2px 6px',
+                                        fontSize: '9px',
+                                        color: 'rgba(0,0,0,0.5)',
+                                    }}>
+                                        +{t.tags.length - 3}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
                         {t.description && <div className={cardSubtitle}>{t.description}</div>}
                         {(t as any).is_blank && (
                             <div
@@ -2719,6 +2914,7 @@ export default function BoardPage() {
                     className={card}
                     style={{ ...style, background: "#ff4444", color: "white" }}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                    onContextMenu={(e) => handleCardContextMenu(c.id, e)}
                 >
                     <div className={cardHeader} style={{ color: "rgba(255,255,255,0.8)" }}>Zombie</div>
                     <div className={cardBody}>
@@ -2775,6 +2971,7 @@ export default function BoardPage() {
                     className={card}
                     style={{ ...style, background: "linear-gradient(180deg, #fef3c7, #fde68a)" }}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                    onContextMenu={(e) => handleCardContextMenu(c.id, e)}
                 >
                     <div className={cardHeader}>Loot</div>
                     <div className={cardBody}>
@@ -2834,6 +3031,7 @@ export default function BoardPage() {
                     className={card}
                     style={{ ...style, background: "linear-gradient(180deg, #d1fae5, #a7f3d0)" }}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                    onContextMenu={(e) => handleCardContextMenu(c.id, e)}
                 >
                     {/* Gather progress bar at top */}
                     {hasVillager && (
@@ -2890,6 +3088,10 @@ export default function BoardPage() {
                 deadline_pin: "⏱",
                 schedule_token: "📅",
                 importance_seal: "⚠️",
+                waiting_on: "⏸️",
+                next_action: "▶️",
+                review_cadence: "🔄",
+                checklist: "☑️",
             };
             
             // Check if modifier is spent
@@ -2907,6 +3109,7 @@ export default function BoardPage() {
                         cursor: isSpent ? 'grab' : 'grab'
                     }}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e)}
+                    onContextMenu={(e) => handleCardContextMenu(c.id, e)}
                 >
                     <div className={cardHeader}>{isSpent ? "Spent Modifier" : "Modifier"}</div>
                     <div className={cardBody}>
@@ -2922,6 +3125,28 @@ export default function BoardPage() {
                         {m.max_charges > 0 && !isSpent && (
                             <div className={cardSubtitle}>
                                 {m.charges}/{m.max_charges} uses
+                            </div>
+                        )}
+                        
+                        {/* Modifier-specific info */}
+                        {m.type === 'waiting_on' && m.unblocked_at && (
+                            <div className={cardSubtitle} style={{ fontSize: '9px', marginTop: '2px' }}>
+                                Until {new Date(m.unblocked_at).toLocaleDateString()}
+                            </div>
+                        )}
+                        {m.type === 'review_cadence' && m.review_every_days && (
+                            <div className={cardSubtitle} style={{ fontSize: '9px', marginTop: '2px' }}>
+                                Every {m.review_every_days} days
+                            </div>
+                        )}
+                        {m.type === 'checklist' && m.checklist_total && (
+                            <div className={cardSubtitle} style={{ fontSize: '9px', marginTop: '2px' }}>
+                                {m.checklist_completed || 0}/{m.checklist_total} steps
+                            </div>
+                        )}
+                        {m.type === 'next_action' && (
+                            <div className={cardSubtitle} style={{ fontSize: '9px', marginTop: '2px', color: '#10b981', fontWeight: 700 }}>
+                                2x Bonus
                             </div>
                         )}
                     </div>
@@ -3520,6 +3745,123 @@ export default function BoardPage() {
                                                         {(taskCard.data as Task).description}
                                                     </div>
                                                 )}
+                                                
+                                                {/* Priority selector */}
+                                                <div style={{ marginTop: 12 }}>
+                                                    <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', marginBottom: 4 }}>Priority</div>
+                                                    <div style={{ display: 'flex', gap: 6 }}>
+                                                        {[0, 1, 2, 3, 4].map(p => {
+                                                            const task = taskCard.data as Task;
+                                                            const isSelected = (task.priority || 0) === p;
+                                                            return (
+                                                                <button
+                                                                    key={p}
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            await api.setTaskPriority(task.id, p);
+                                                                            update(d => {
+                                                                                const tc = d.cards.find(c => c.id === taskCard.id);
+                                                                                if (tc) {
+                                                                                    (tc.data as Task).priority = p;
+                                                                                }
+                                                                                d.error = p === 0 ? '✓ Priority removed' : `✓ Set priority to P${p}`;
+                                                                                setTimeout(() => update(d => { d.error = null; }), 2000);
+                                                                            });
+                                                                        } catch (error) {
+                                                                            console.error('Failed to set priority:', error);
+                                                                        }
+                                                                    }}
+                                                                    style={{
+                                                                        padding: '6px 12px',
+                                                                        fontSize: '11px',
+                                                                        fontWeight: 600,
+                                                                        background: isSelected
+                                                                            ? p === 0 ? 'rgba(107, 114, 128, 0.3)'
+                                                                            : p === 1 ? 'rgba(239, 68, 68, 0.3)'
+                                                                            : p === 2 ? 'rgba(245, 158, 11, 0.3)'
+                                                                            : p === 3 ? 'rgba(59, 130, 246, 0.3)'
+                                                                            : 'rgba(107, 114, 128, 0.3)'
+                                                                            : 'rgba(255, 255, 255, 0.05)',
+                                                                        border: `1px solid ${
+                                                                            isSelected
+                                                                                ? p === 0 ? '#6b7280'
+                                                                                : p === 1 ? '#ef4444'
+                                                                                : p === 2 ? '#f59e0b'
+                                                                                : p === 3 ? '#3b82f6'
+                                                                                : '#6b7280'
+                                                                                : 'rgba(255, 255, 255, 0.1)'
+                                                                        }`,
+                                                                        color: isSelected ? 'white' : 'rgba(255, 255, 255, 0.6)',
+                                                                        borderRadius: '4px',
+                                                                        cursor: 'pointer',
+                                                                        transition: 'all 0.15s',
+                                                                    }}
+                                                                    onMouseEnter={(e) => e.currentTarget.style.background = isSelected
+                                                                        ? e.currentTarget.style.background
+                                                                        : 'rgba(255, 255, 255, 0.1)'}
+                                                                    onMouseLeave={(e) => e.currentTarget.style.background = isSelected
+                                                                        ? e.currentTarget.style.background
+                                                                        : 'rgba(255, 255, 255, 0.05)'}
+                                                                >
+                                                                    {p === 0 ? 'None' : `P${p}`}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* Tags */}
+                                                <div style={{ marginTop: 12 }}>
+                                                    <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', marginBottom: 4 }}>Tags</div>
+                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                                        {((taskCard.data as Task).tags || []).map((tag, i) => (
+                                                            <div
+                                                                key={i}
+                                                                style={{
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '11px',
+                                                                    fontWeight: 600,
+                                                                    background: 'rgba(139, 92, 246, 0.2)',
+                                                                    color: '#a78bfa',
+                                                                    border: '1px solid rgba(139, 92, 246, 0.4)',
+                                                                }}
+                                                            >
+                                                                #{tag}
+                                                            </div>
+                                                        ))}
+                                                        <button
+                                                            onClick={() => {
+                                                                update(d => { 
+                                                                    d.showTagEditor = true;
+                                                                    d.tagEditorCardId = taskCard.id;
+                                                                    d.tagInputValue = '';
+                                                                });
+                                                            }}
+                                                            style={{
+                                                                padding: '4px 8px',
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                                background: 'rgba(255, 255, 255, 0.05)',
+                                                                border: '1px solid rgba(255, 255, 255, 0.1)',
+                                                                color: 'rgba(255, 255, 255, 0.6)',
+                                                                borderRadius: '4px',
+                                                                cursor: 'pointer',
+                                                                transition: 'all 0.15s',
+                                                            }}
+                                                            onMouseEnter={(e) => {
+                                                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                                                                e.currentTarget.style.color = 'white';
+                                                            }}
+                                                            onMouseLeave={(e) => {
+                                                                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                                                                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)';
+                                                            }}
+                                                        >
+                                                            + Add Tag
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -3894,6 +4236,440 @@ export default function BoardPage() {
                     </div>
                 </div>
             )}
+            
+            {/* Tag Editor Modal */}
+            {st.showTagEditor && (() => {
+                const card = st.cards.find(c => c.id === st.tagEditorCardId);
+                if (!card || card.type !== 'task') return null;
+                const task = card.data as Task;
+                
+                const handleAddTag = async () => {
+                    const tagName = st.tagInputValue.trim();
+                    if (!tagName) return;
+                    
+                    try {
+                        await api.addTag(task.id, tagName);
+                        update(d => {
+                            const taskCard = d.cards.find(c => c.id === card.id);
+                            if (taskCard) {
+                                const t = taskCard.data as Task;
+                                // Initialize tags array if it doesn't exist
+                                if (!t.tags) t.tags = [];
+                                if (!t.tags.includes(tagName)) {
+                                    t.tags = [...t.tags, tagName];
+                                }
+                            }
+                            d.showTagEditor = false;
+                            d.tagEditorCardId = null;
+                            d.tagInputValue = '';
+                            d.error = `✓ Tag "${tagName}" added`;
+                            setTimeout(() => update(d => { d.error = null; }), 2000);
+                        });
+                    } catch (error: any) {
+                        console.error('Failed to add tag:', error);
+                        update(d => {
+                            d.error = `✗ Failed to add tag: ${error.message}`;
+                            setTimeout(() => update(d => { d.error = null; }), 3000);
+                        });
+                    }
+                };
+                
+                return (
+                    <div 
+                        className={searchOverlay}
+                        onClick={(e) => {
+                            if (e.target === e.currentTarget) {
+                                update(d => { 
+                                    d.showTagEditor = false;
+                                    d.tagEditorCardId = null;
+                                    d.tagInputValue = '';
+                                });
+                            }
+                        }}
+                    >
+                        <div className={tagEditorModal}>
+                            <div className={tagEditorTitle}>Add Tag to Task</div>
+                            <input
+                                className={tagEditorInput}
+                                type="text"
+                                placeholder="Enter tag name..."
+                                value={st.tagInputValue}
+                                autoFocus
+                                onChange={(e) => update(d => { d.tagInputValue = e.target.value; })}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleAddTag();
+                                    } else if (e.key === 'Escape') {
+                                        update(d => { 
+                                            d.showTagEditor = false;
+                                            d.tagEditorCardId = null;
+                                            d.tagInputValue = '';
+                                        });
+                                    }
+                                }}
+                            />
+                            <div className={tagEditorButtons}>
+                                <button
+                                    className={button}
+                                    style={{ background: 'rgba(255, 255, 255, 0.1)' }}
+                                    onClick={() => {
+                                        update(d => { 
+                                            d.showTagEditor = false;
+                                            d.tagEditorCardId = null;
+                                            d.tagInputValue = '';
+                                        });
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className={button}
+                                    style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                                    onClick={handleAddTag}
+                                >
+                                    Add Tag
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+            
+            {/* Context Menu */}
+            {st.contextMenu && (() => {
+                const card = st.cards.find(c => c.id === st.contextMenu!.cardId);
+                if (!card) return null;
+                
+                const menuItems: Array<{ label: string; icon: string; onClick: () => void; danger?: boolean }> = [];
+                
+                // Task actions
+                if (card.type === 'task') {
+                    const task = card.data as Task;
+                    if (!task.completed) {
+                        menuItems.push({
+                            label: 'Complete Task',
+                            icon: '✓',
+                            onClick: async () => {
+                                update(d => { d.contextMenu = null; });
+                                await handleCompleteTask(task.id);
+                            }
+                        });
+                    }
+                    if (task.is_blank) {
+                        menuItems.push({
+                            label: 'Edit Task',
+                            icon: '✏️',
+                            onClick: () => {
+                                update(d => { 
+                                    d.contextMenu = null;
+                                    d.detailPanelCard = card.id;
+                                    d.editingBlankTask = { name: task.name, description: task.description || '' };
+                                });
+                            }
+                        });
+                        menuItems.push({
+                            label: 'Delete Task',
+                            icon: '🗑',
+                            danger: true,
+                            onClick: async () => {
+                                update(d => { d.contextMenu = null; });
+                                try {
+                                    await api.collectLoot('paper', 1);
+                                    update(d => {
+                                        d.cards = d.cards.filter(c => c.id !== card.id);
+                                        if (d.inventory) d.inventory.paper += 1;
+                                        d.error = '✓ Recycled blank task';
+                                        setTimeout(() => update(d => { d.error = null; }), 2000);
+                                        saveBoardState(d.cards);
+                                    });
+                                } catch (error) {
+                                    console.error('Failed to recycle blank task:', error);
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Add priority submenu
+                    if (!task.is_blank) {
+                        const currentPriority = task.priority || 0;
+                        [1, 2, 3, 4].forEach(p => {
+                            if (p !== currentPriority) {
+                                menuItems.push({
+                                    label: `Set Priority P${p}`,
+                                    icon: p === 1 ? '🔴' : p === 2 ? '🟠' : p === 3 ? '🔵' : '⚪',
+                                    onClick: async () => {
+                                        update(d => { d.contextMenu = null; });
+                                        try {
+                                            await api.setTaskPriority(task.id, p);
+                                            update(d => {
+                                                const taskCard = d.cards.find(c => c.id === card.id);
+                                                if (taskCard) {
+                                                    (taskCard.data as Task).priority = p;
+                                                }
+                                                d.error = `✓ Set priority to P${p}`;
+                                                setTimeout(() => update(d => { d.error = null; }), 2000);
+                                            });
+                                        } catch (error) {
+                                            console.error('Failed to set priority:', error);
+                                        }
+                                    }
+                                });
+                            }
+                        });
+                        
+                        if (currentPriority > 0) {
+                            menuItems.push({
+                                label: 'Remove Priority',
+                                icon: '⭕',
+                                onClick: async () => {
+                                    update(d => { d.contextMenu = null; });
+                                    try {
+                                        await api.setTaskPriority(task.id, 0);
+                                        update(d => {
+                                            const taskCard = d.cards.find(c => c.id === card.id);
+                                            if (taskCard) {
+                                                (taskCard.data as Task).priority = 0;
+                                            }
+                                            d.error = '✓ Priority removed';
+                                            setTimeout(() => update(d => { d.error = null; }), 2000);
+                                        });
+                                    } catch (error) {
+                                        console.error('Failed to remove priority:', error);
+                                    }
+                                }
+                            });
+                        }
+                    }
+                    
+                    // Add tag option
+                    if (!task.is_blank) {
+                        menuItems.push({
+                            label: 'Add Tag',
+                            icon: '🏷️',
+                            onClick: () => {
+                                update(d => { 
+                                    d.contextMenu = null;
+                                    d.showTagEditor = true;
+                                    d.tagEditorCardId = card.id;
+                                    d.tagInputValue = '';
+                                });
+                            }
+                        });
+                    }
+                }
+                
+                // Modifier actions
+                if (card.type === 'modifier') {
+                    const modifier = card.data as ModifierCard;
+                    const isSpent = modifier.status === 'spent' || (modifier.max_charges > 0 && modifier.charges <= 0);
+                    
+                    if (isSpent) {
+                        menuItems.push({
+                            label: 'Salvage for Parts',
+                            icon: '♻️',
+                            onClick: async () => {
+                                update(d => { d.contextMenu = null; });
+                                try {
+                                    const lootAmount = 1;
+                                    await api.collectLoot('parts', lootAmount);
+                                    update(d => {
+                                        d.cards = d.cards.filter(c => c.id !== card.id);
+                                        if (d.inventory) d.inventory.parts += lootAmount;
+                                        d.error = `✓ Salvaged ${modifier.type.replace(/_/g, ' ')} → 🔧 parts`;
+                                        setTimeout(() => update(d => { d.error = null; }), 2000);
+                                        saveBoardState(d.cards);
+                                    });
+                                } catch (error) {
+                                    console.error('Failed to salvage modifier:', error);
+                                }
+                            }
+                        });
+                    } else if (card.parentId) {
+                        menuItems.push({
+                            label: 'Detach Modifier',
+                            icon: '🔓',
+                            onClick: () => {
+                                update(d => {
+                                    d.contextMenu = null;
+                                    const modCard = d.cards.find(c => c.id === card.id);
+                                    if (modCard) {
+                                        modCard.parentId = undefined;
+                                        modCard.x = card.x + 150;
+                                        modCard.y = card.y;
+                                        saveBoardState(d.cards);
+                                        d.error = '✓ Detached modifier';
+                                        setTimeout(() => update(d => { d.error = null; }), 2000);
+                                    }
+                                });
+                            }
+                        });
+                        
+                        // Add modifier-specific configuration options
+                        if (modifier.type === 'waiting_on') {
+                            menuItems.push({
+                                label: 'Set Unblock Date',
+                                icon: '📅',
+                                onClick: () => {
+                                    update(d => { d.contextMenu = null; });
+                                    const dateStr = prompt('Enter unblock date (YYYY-MM-DD):', 
+                                        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+                                    if (dateStr) {
+                                        api.setWaitingOn(modifier.id, new Date(dateStr).toISOString())
+                                            .then(() => {
+                                                update(d => {
+                                                    const modCard = d.cards.find(c => c.id === card.id);
+                                                    if (modCard) {
+                                                        (modCard.data as ModifierCard).unblocked_at = new Date(dateStr).toISOString();
+                                                    }
+                                                    d.error = `✓ Set unblock date to ${dateStr}`;
+                                                    setTimeout(() => update(d => { d.error = null; }), 2000);
+                                                });
+                                            })
+                                            .catch(err => console.error('Failed to set waiting on date:', err));
+                                    }
+                                }
+                            });
+                        }
+                        
+                        if (modifier.type === 'checklist' && modifier.checklist_total) {
+                            menuItems.push({
+                                label: `✓ Complete Step (${(modifier.checklist_completed || 0)}/${modifier.checklist_total})`,
+                                icon: '☑️',
+                                onClick: () => {
+                                    update(d => { d.contextMenu = null; });
+                                    if ((modifier.checklist_completed || 0) < modifier.checklist_total!) {
+                                        api.incrementChecklist(modifier.id)
+                                            .then(() => {
+                                                update(d => {
+                                                    const modCard = d.cards.find(c => c.id === card.id);
+                                                    if (modCard) {
+                                                        const mod = modCard.data as ModifierCard;
+                                                        mod.checklist_completed = (mod.checklist_completed || 0) + 1;
+                                                    }
+                                                    d.error = `✓ Step completed (${(modifier.checklist_completed || 0) + 1}/${modifier.checklist_total})`;
+                                                    setTimeout(() => update(d => { d.error = null; }), 2000);
+                                                });
+                                            })
+                                            .catch(err => console.error('Failed to increment checklist:', err));
+                                    }
+                                }
+                            });
+                        }
+                        
+                        if (modifier.type === 'review_cadence') {
+                            menuItems.push({
+                                label: 'Set Review Schedule',
+                                icon: '🔄',
+                                onClick: () => {
+                                    update(d => { d.contextMenu = null; });
+                                    const days = prompt('Review every N days:', '7');
+                                    if (days && !isNaN(parseInt(days))) {
+                                        const nextDate = new Date(Date.now() + parseInt(days) * 24 * 60 * 60 * 1000).toISOString();
+                                        api.setReviewCadence(modifier.id, parseInt(days), nextDate)
+                                            .then(() => {
+                                                update(d => {
+                                                    const modCard = d.cards.find(c => c.id === card.id);
+                                                    if (modCard) {
+                                                        const mod = modCard.data as ModifierCard;
+                                                        mod.review_every_days = parseInt(days);
+                                                        mod.review_next_at = nextDate;
+                                                    }
+                                                    d.error = `✓ Set review every ${days} days`;
+                                                    setTimeout(() => update(d => { d.error = null; }), 2000);
+                                                });
+                                            })
+                                            .catch(err => console.error('Failed to set review cadence:', err));
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                // Loot actions
+                if (card.type === 'loot') {
+                    menuItems.push({
+                        label: 'Collect Loot',
+                        icon: '📦',
+                        onClick: async () => {
+                            update(d => { d.contextMenu = null; });
+                            try {
+                                const lootData = card.data as { loot_type: string; loot_amount: number };
+                                await api.collectLoot(lootData.loot_type, lootData.loot_amount);
+                                update(d => {
+                                    d.cards = d.cards.filter(c => c.id !== card.id);
+                                    if (d.inventory && lootData.loot_type in d.inventory) {
+                                        (d.inventory as any)[lootData.loot_type] += lootData.loot_amount;
+                                    }
+                                    d.error = `✓ Collected ${lootData.loot_type}`;
+                                    setTimeout(() => update(d => { d.error = null; }), 2000);
+                                    saveBoardState(d.cards);
+                                });
+                            } catch (error) {
+                                console.error('Failed to collect loot:', error);
+                            }
+                        }
+                    });
+                }
+                
+                // Zombie actions
+                if (card.type === 'zombie') {
+                    const zombie = card.data as Zombie;
+                    menuItems.push({
+                        label: 'Clear Zombie (2 stamina)',
+                        icon: '⚔️',
+                        onClick: async () => {
+                            update(d => { d.contextMenu = null; });
+                            try {
+                                await api.clearZombie(zombie.id, 2);
+                                update(d => {
+                                    d.cards = d.cards.filter(c => c.id !== card.id);
+                                    d.error = '✓ Zombie cleared!';
+                                    setTimeout(() => update(d => { d.error = null; }), 2000);
+                                    saveBoardState(d.cards);
+                                });
+                                await refresh();
+                            } catch (e) {
+                                console.error('Failed to clear zombie:', e);
+                            }
+                        }
+                    });
+                }
+                
+                // Always show "View Details"
+                menuItems.push({
+                    label: 'View Details',
+                    icon: 'ℹ️',
+                    onClick: () => {
+                        update(d => {
+                            d.contextMenu = null;
+                            d.detailPanelCard = card.id;
+                        });
+                    }
+                });
+                
+                return (
+                    <div
+                        className={contextMenu}
+                        style={{
+                            left: st.contextMenu.x,
+                            top: st.contextMenu.y
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {menuItems.map((item, i) => (
+                            <div
+                                key={i}
+                                className={item.danger ? contextMenuItemDanger : contextMenuItem}
+                                onClick={item.onClick}
+                            >
+                                <span>{item.icon}</span>
+                                <span>{item.label}</span>
+                            </div>
+                        ))}
+                    </div>
+                );
+            })()}
         </div>
     );
 }

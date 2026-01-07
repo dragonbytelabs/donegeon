@@ -50,6 +50,12 @@ export const api = {
       body: JSON.stringify({ id, tag }),
     }),
 
+  setTaskPriority: (id: number, priority: number) =>
+    request<Task>("/api/tasks/priority", {
+      method: "POST",
+      body: JSON.stringify({ id, priority }),
+    }),
+
   completeTask: (id: number) =>
     request<CompleteTaskResult>("/api/tasks/complete", {
       method: "POST",
@@ -104,6 +110,25 @@ export const api = {
     }),
 
   listModifiers: () => request<ModifierCard[]>("/api/modifiers"),
+
+  // Modifier-specific updates
+  setWaitingOn: (modifier_id: string, unblocked_at: string) =>
+    request<ModifierCard>("/api/modifiers/waiting-on/set", {
+      method: "POST",
+      body: JSON.stringify({ modifier_id, unblocked_at }),
+    }),
+
+  incrementChecklist: (modifier_id: string) =>
+    request<ModifierCard>("/api/modifiers/checklist/increment", {
+      method: "POST",
+      body: JSON.stringify({ modifier_id }),
+    }),
+
+  setReviewCadence: (modifier_id: string, review_every_days: number, review_next_at: string) =>
+    request<ModifierCard>("/api/modifiers/review/set", {
+      method: "POST",
+      body: JSON.stringify({ modifier_id, review_every_days, review_next_at }),
+    }),
 
   // quests
   listQuests: () => request<any[]>("/api/quests"),

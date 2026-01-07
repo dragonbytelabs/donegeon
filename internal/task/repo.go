@@ -9,6 +9,7 @@ type Repository interface {
 	Delete(ctx context.Context, id int) (bool, error)
 
 	AddTag(ctx context.Context, id int, tag string) (Task, bool, error)
+	SetPriority(ctx context.Context, id int, priority Priority) (Task, bool, error)
 	Complete(ctx context.Context, id int) (Task, bool, error)
 
 	Process(ctx context.Context, id int) (Task, bool, error) // moves Inbox -> Live

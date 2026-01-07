@@ -111,6 +111,34 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 			return DayTickResult{}, err
 		}
 
+		// WaitingOn: Skip zombie spawning if blocked by external dependency
+		if mods.WaitingOn != nil && mods.WaitingOn.UnblockedAt != nil {
+			if now.Before(*mods.WaitingOn.UnblockedAt) {
+				// Task is waiting, don't spawn zombies
+				continue
+			}
+		}
+
+		// ReviewCadence: Skip zombie if next review hasn't arrived yet
+		if mods.ReviewCadence != nil && mods.ReviewCadence.ReviewNextAt != nil {
+			if now.Before(*mods.ReviewCadence.ReviewNextAt) {
+				// Review not due yet, don't spawn zombies
+				continue
+			}
+		}
+
+		// Checklist: Only spawn zombie if no progress in the last day
+		// (This is a simplified version - in production you'd track daily progress)
+		if mods.Checklist != nil {
+			// If there's been any progress, skip zombie spawn
+			// For now, we check if checklist is partially complete
+			if mods.Checklist.ChecklistCompleted > 0 && mods.Checklist.ChecklistCompleted < mods.Checklist.ChecklistTotal {
+				// Has progress, more lenient on zombie spawning
+				// Skip this task for zombie consideration
+				continue
+			}
+		}
+
 		// deadline missed
 		if mods.Deadline != nil && mods.Deadline.DeadlineAt != nil && now.After(*mods.Deadline.DeadlineAt) {
 			exists, _ := e.Zombies.ExistsForTask(ctx, t.ID, zombie.ReasonDeadlineMissed)
@@ -679,9 +707,13 @@ func (e Engine) DetachModifier(ctx context.Context, taskID int, modifierID strin
 }
 
 type taskMods struct {
-	Deadline  *modifier.Card
-	Important *modifier.Card
-	Recurring *modifier.Card
+	Deadline      *modifier.Card
+	Important     *modifier.Card
+	Recurring     *modifier.Card
+	WaitingOn     *modifier.Card
+	NextAction    *modifier.Card
+	ReviewCadence *modifier.Card
+	Checklist     *modifier.Card
 }
 
 func (e Engine) getTaskMods(ctx context.Context, t task.Task) (taskMods, error) {
@@ -707,6 +739,22 @@ func (e Engine) getTaskMods(ctx context.Context, t task.Task) (taskMods, error) 
 		case modifier.RecurringContract:
 			if out.Recurring == nil {
 				out.Recurring = &c
+			}
+		case modifier.WaitingOn:
+			if out.WaitingOn == nil {
+				out.WaitingOn = &c
+			}
+		case modifier.NextAction:
+			if out.NextAction == nil {
+				out.NextAction = &c
+			}
+		case modifier.ReviewCadence:
+			if out.ReviewCadence == nil {
+				out.ReviewCadence = &c
+			}
+		case modifier.Checklist:
+			if out.Checklist == nil {
+				out.Checklist = &c
 			}
 		}
 	}
@@ -783,6 +831,32 @@ func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResul
 		}
 
 		drops = table.Roll()
+
+		// Check for NextAction modifier - gives 2x completion bonus
+		mods, err := e.getTaskMods(ctx, t)
+		if err == nil && mods.NextAction != nil {
+			// Double the loot drops for next action tasks
+			bonusDrops := make([]loot.Drop, len(drops))
+			copy(bonusDrops, drops)
+			drops = append(drops, bonusDrops...)
+		}
+
+		// Check for Checklist modifier - bonus scales with completion
+		if err == nil && mods.Checklist != nil {
+			if mods.Checklist.ChecklistTotal > 0 {
+				// Bonus: +10% per step completed
+				bonusPct := (mods.Checklist.ChecklistCompleted * 10) / mods.Checklist.ChecklistTotal
+				if bonusPct > 0 {
+					for i := range drops {
+						bonus := (drops[i].Amount * bonusPct) / 100
+						if bonus < 1 {
+							bonus = 1
+						}
+						drops[i].Amount += bonus
+					}
+				}
+			}
+		}
 
 		// Apply zombie penalty
 		w, err := e.World.Get(ctx)
