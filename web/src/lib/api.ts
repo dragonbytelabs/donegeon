@@ -1,7 +1,6 @@
 import type {
   Task,
   ModifierCard,
-  Quest,
   Recipe,
   Villager,
   Zombie,
@@ -14,7 +13,8 @@ import type {
   Deck,
   OpenDeckResult,
   Building,
-  CompleteTaskResult,  Project,  Project,
+  CompleteTaskResult,
+  Project,
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
