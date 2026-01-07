@@ -180,6 +180,73 @@ const minimapCard = css`
   border-radius: 50%;
 `;
 
+const searchOverlay = css`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 100px;
+`;
+
+const searchModal = css`
+  width: 500px;
+  max-height: 500px;
+  background: rgba(0, 0, 0, 0.95);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+`;
+
+const searchInput = css`
+  width: 100%;
+  padding: 16px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  font-size: 18px;
+  outline: none;
+  
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+`;
+
+const searchResults = css`
+  max-height: 400px;
+  overflow-y: auto;
+`;
+
+const searchResult = css`
+  padding: 12px 20px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.1s;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const searchResultTitle = css`
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+`;
+
+const searchResultType = css`
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
 const backButton = css`
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.1);
@@ -753,6 +820,8 @@ type State = {
     tooltip: { x: number; y: number; text: string } | null;
     zoom: number;
     showMinimap: boolean;
+    showSearch: boolean;
+    searchQuery: string;
 };
 
 export default function BoardPage() {
@@ -783,6 +852,8 @@ export default function BoardPage() {
         showDebug: false,
         tooltip: null,
         showMinimap: false,
+        showSearch: false,
+        searchQuery: '',
     });
 
     const boardRef = useRef<HTMLDivElement>(null);
@@ -805,7 +876,6 @@ export default function BoardPage() {
         // Villager + Task = Assign villager to task
         if (draggedCard.type === "villager" && targetCard.type === "task") {
             const villager = draggedCard.data as Villager;
-            const task = targetCard.data as Task;
             if (villager.stamina <= 0) {
                 return "❌ No stamina - Villager needs food";
             }
@@ -1225,6 +1295,15 @@ export default function BoardPage() {
                 case 'm': // M - Toggle minimap
                     e.preventDefault();
                     update(d => { d.showMinimap = !d.showMinimap; });
+                    break;
+                case 'k': // K - Open search (with Ctrl/Cmd)
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        update(d => { 
+                            d.showSearch = !d.showSearch; 
+                            d.searchQuery = '';
+                        });
+                    }
                     break;
                 case '1': // 1 - Open First Day deck
                     void openDeck('deck_first_day');
@@ -3687,6 +3766,132 @@ export default function BoardPage() {
                     }}
                 >
                     {st.tooltip.text}
+                </div>
+            )}
+            
+            {/* Search Modal */}
+            {st.showSearch && (
+                <div 
+                    className={searchOverlay}
+                    onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                            update(d => { d.showSearch = false; });
+                        }
+                    }}
+                >
+                    <div className={searchModal}>
+                        <input
+                            className={searchInput}
+                            type="text"
+                            placeholder="Search cards..."
+                            value={st.searchQuery}
+                            autoFocus
+                            onChange={(e) => update(d => { d.searchQuery = e.target.value; })}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                    update(d => { d.showSearch = false; });
+                                }
+                            }}
+                        />
+                        <div className={searchResults}>
+                            {(() => {
+                                const query = st.searchQuery.toLowerCase().trim();
+                                if (!query) return null;
+                                
+                                const matches = st.cards.filter(card => {
+                                    // Search by card type
+                                    if (card.type.includes(query)) return true;
+                                    
+                                    // Search by card data
+                                    if (card.type === 'task') {
+                                        const task = card.data as { name: string };
+                                        return task.name.toLowerCase().includes(query);
+                                    }
+                                    if (card.type === 'villager') {
+                                        const villager = card.data as { name: string };
+                                        return villager.name.toLowerCase().includes(query);
+                                    }
+                                    if (card.type === 'zombie') {
+                                        const zombie = card.data as { task_name: string };
+                                        return zombie.task_name.toLowerCase().includes(query);
+                                    }
+                                    if (card.type === 'modifier') {
+                                        const modifier = card.data as { modifier_type: string };
+                                        return modifier.modifier_type.toLowerCase().includes(query);
+                                    }
+                                    if (card.type === 'building') {
+                                        const building = card.data as { building_type: string };
+                                        return building.building_type.toLowerCase().includes(query);
+                                    }
+                                    if (card.type === 'loot') {
+                                        const loot = card.data as { loot_type: string };
+                                        return loot.loot_type.toLowerCase().includes(query);
+                                    }
+                                    
+                                    return false;
+                                });
+                                
+                                if (matches.length === 0) {
+                                    return (
+                                        <div style={{ padding: '20px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.3)' }}>
+                                            No cards found
+                                        </div>
+                                    );
+                                }
+                                
+                                return matches.slice(0, 10).map(card => {
+                                    let title = '';
+                                    let subtitle = card.type;
+                                    
+                                    if (card.type === 'task') {
+                                        const task = card.data as { name: string };
+                                        title = task.name;
+                                        subtitle = 'task';
+                                    } else if (card.type === 'villager') {
+                                        const villager = card.data as { name: string };
+                                        title = villager.name;
+                                        subtitle = 'villager';
+                                    } else if (card.type === 'zombie') {
+                                        const zombie = card.data as { task_name: string };
+                                        title = zombie.task_name;
+                                        subtitle = 'zombie';
+                                    } else if (card.type === 'modifier') {
+                                        const modifier = card.data as { modifier_type: string };
+                                        title = modifier.modifier_type.replace(/_/g, ' ');
+                                        subtitle = 'modifier';
+                                    } else if (card.type === 'building') {
+                                        const building = card.data as { building_type: string };
+                                        title = building.building_type.replace(/_/g, ' ');
+                                        subtitle = 'building';
+                                    } else if (card.type === 'loot') {
+                                        const loot = card.data as { loot_type: string };
+                                        title = loot.loot_type.replace(/_/g, ' ');
+                                        subtitle = 'loot';
+                                    }
+                                    
+                                    return (
+                                        <div
+                                            key={card.id}
+                                            className={searchResult}
+                                            onClick={() => {
+                                                // Center camera on the card
+                                                const targetX = -card.x + window.innerWidth / 2 - 120; // Account for left HUD
+                                                const targetY = -card.y + window.innerHeight / 2;
+                                                update(d => {
+                                                    d.cameraX = targetX;
+                                                    d.cameraY = targetY;
+                                                    d.showSearch = false;
+                                                });
+                                            }}
+                                        >
+                                            <div className={searchResultTitle}>{title}</div>
+                                            <div className={searchResultType}>{subtitle}</div>
+                                        </div>
+                                    );
+                                });
+                            })()}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
