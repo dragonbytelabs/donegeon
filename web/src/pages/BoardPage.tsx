@@ -41,16 +41,17 @@ const topBar = css`
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
+  height: 48px;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(10px);
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 0 20px;
+  gap: 12px;
+  padding: 0 16px;
   z-index: 100;
   color: white;
+  font-size: 13px;
 `;
 
 const debugPanel = css`
@@ -93,30 +94,32 @@ const debugZombieItem = css`
 
 const leftHud = css`
   position: fixed;
-  top: 80px;
-  left: 20px;
-  width: 280px;
+  top: 60px;
+  left: 12px;
+  width: 240px;
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(10px);
   border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: 8px;
+  padding: 12px;
   z-index: 100;
   color: white;
 `;
 
 const hudTitle = css`
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 800;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   color: #fbbf24;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 `;
 
 const hudSection = css`
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   
   &:last-child {
@@ -126,18 +129,55 @@ const hudSection = css`
 `;
 
 const hudLabel = css`
-  font-size: 11px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: rgba(255, 255, 255, 0.5);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-weight: 700;
 `;
 
 const hudValue = css`
-  font-size: 14px;
+  font-size: 12px;
   color: white;
   font-weight: 600;
+`;
+
+const minimap = css`
+  position: fixed;
+  bottom: 4px;
+  left: 12px;
+  width: 240px;
+  height: 150px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px;
+  z-index: 100;
+  cursor: crosshair;
+`;
+
+const minimapCanvas = css`
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+`;
+
+const minimapViewport = css`
+  position: absolute;
+  border: 2px solid #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
+`;
+
+const minimapCard = css`
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
 `;
 
 const backButton = css`
@@ -161,32 +201,33 @@ const backButton = css`
 
 const resourceDisplay = css`
   display: flex;
-  gap: 15px;
+  gap: 8px;
   align-items: center;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
 `;
 
 const resourceItem = css`
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 4px;
+  padding: 4px 8px;
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.2);
 `;
 
 const resourceIcon = css`
-  font-size: 18px;
+  font-size: 14px;
 `;
 
 const button = css`
-  padding: 8px 16px;
+  padding: 6px 12px;
   background: linear-gradient(180deg, #4a9eff, #2563eb);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 8px;
+  border-radius: 6px;
   color: white;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -710,6 +751,8 @@ type State = {
     showHelp: boolean;
     showDebug: boolean;
     tooltip: { x: number; y: number; text: string } | null;
+    zoom: number;
+    showMinimap: boolean;
 };
 
 export default function BoardPage() {
@@ -718,6 +761,7 @@ export default function BoardPage() {
         error: null,
         cameraX: 0,
         cameraY: 0,
+        zoom: 1,
         cards: [], // Start empty, will load positions in refresh()
         particles: [],
         inventory: null,
@@ -738,6 +782,7 @@ export default function BoardPage() {
         showHelp: false,
         showDebug: false,
         tooltip: null,
+        showMinimap: false,
     });
 
     const boardRef = useRef<HTMLDivElement>(null);
@@ -1165,11 +1210,21 @@ export default function BoardPage() {
                         if (d.showDebug) d.showDebug = false;
                     });
                     break;
+                case '0': // 0 - Reset zoom (with Ctrl/Cmd)
+                    if (e.ctrlKey || e.metaKey) {
+                        e.preventDefault();
+                        update(d => { d.zoom = 1; });
+                    }
+                    break;
                 case 'd': // D - Toggle debug panel
                     if (e.shiftKey) {
                         e.preventDefault();
                         update(d => { d.showDebug = !d.showDebug; });
                     }
+                    break;
+                case 'm': // M - Toggle minimap
+                    e.preventDefault();
+                    update(d => { d.showMinimap = !d.showMinimap; });
                     break;
                 case '1': // 1 - Open First Day deck
                     void openDeck('deck_first_day');
@@ -1354,6 +1409,34 @@ export default function BoardPage() {
         
         return () => clearInterval(interval);
     }, [st.cards]);
+
+    // Zoom handler (wheel + pinch)
+    useEffect(() => {
+        const handleWheel = (e: WheelEvent) => {
+            // Check if Ctrl/Cmd is held (standard zoom modifier)
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                
+                const delta = -e.deltaY * 0.001;
+                const newZoom = Math.max(0.5, Math.min(2.0, st.zoom + delta));
+                
+                update(d => {
+                    d.zoom = newZoom;
+                });
+            }
+        };
+
+        const boardEl = boardRef.current;
+        if (boardEl) {
+            boardEl.addEventListener('wheel', handleWheel, { passive: false });
+        }
+
+        return () => {
+            if (boardEl) {
+                boardEl.removeEventListener('wheel', handleWheel);
+            }
+        };
+    }, [st.zoom, update]);
 
     // Camera drag
     const handleBoardMouseDown = (e: React.MouseEvent) => {
@@ -2833,7 +2916,7 @@ export default function BoardPage() {
                 <Link to="/" className={backButton}>
                     ← Task Manager
                 </Link>
-                <div style={{ fontWeight: 900, fontSize: 16 }}>DONEGEON</div>
+                <div style={{ fontWeight: 900, fontSize: 14 }}>DONEGEON</div>
 
                 {st.inventory && (
                     <div className={resourceDisplay}>
@@ -2892,6 +2975,14 @@ export default function BoardPage() {
                         title="Refresh the board - Reload all cards and game state"
                     >
                         Refresh
+                    </button>
+                    <button
+                        className={button}
+                        onClick={() => update(d => { d.zoom = 1; })}
+                        title="Reset zoom to 100% (or use Ctrl+0)"
+                        style={{ minWidth: 40 }}
+                    >
+                        {Math.round(st.zoom * 100)}%
                     </button>
                 </div>
             </div>
@@ -2994,11 +3085,102 @@ export default function BoardPage() {
                 </div>
             </div>
 
+            {/* Minimap */}
+            {st.showMinimap && (() => {
+                // Calculate bounds of all cards
+                if (st.cards.length === 0) return null;
+                
+                const xs = st.cards.map(c => c.x);
+                const ys = st.cards.map(c => c.y);
+                const minX = Math.min(...xs) - 100;
+                const maxX = Math.max(...xs) + 200;
+                const minY = Math.min(...ys) - 100;
+                const maxY = Math.max(...ys) + 200;
+                
+                const worldWidth = maxX - minX;
+                const worldHeight = maxY - minY;
+                
+                // Minimap dimensions
+                const minimapWidth = 220;
+                const minimapHeight = 140;
+                const scale = Math.min(minimapWidth / worldWidth, minimapHeight / worldHeight);
+                
+                // Current viewport in world space
+                const viewportWidth = window.innerWidth / st.zoom;
+                const viewportHeight = (window.innerHeight - 60) / st.zoom;
+                const viewportX = -st.cameraX / st.zoom;
+                const viewportY = (-st.cameraY + 60) / st.zoom;
+                
+                // Convert to minimap space
+                const viewportMinimapX = (viewportX - minX) * scale;
+                const viewportMinimapY = (viewportY - minY) * scale;
+                const viewportMinimapW = viewportWidth * scale;
+                const viewportMinimapH = viewportHeight * scale;
+                
+                const handleMinimapClick = (e: React.MouseEvent) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left - 12; // Account for padding
+                    const clickY = e.clientY - rect.top - 12;
+                    
+                    // Convert from minimap space to world space
+                    const worldX = (clickX / scale) + minX;
+                    const worldY = (clickY / scale) + minY;
+                    
+                    // Center camera on clicked position
+                    update(d => {
+                        d.cameraX = -(worldX * st.zoom) + (window.innerWidth / 2);
+                        d.cameraY = -(worldY * st.zoom) + ((window.innerHeight - 60) / 2) + 60;
+                    });
+                };
+                
+                return (
+                    <div className={minimap} onClick={handleMinimapClick}>
+                        <div className={minimapCanvas}>
+                            {/* Cards as dots */}
+                            {st.cards.map(c => {
+                                const x = (c.x - minX) * scale;
+                                const y = (c.y - minY) * scale;
+                                const color = 
+                                    c.type === 'task' ? '#3b82f6' :
+                                    c.type === 'villager' ? '#10b981' :
+                                    c.type === 'zombie' ? '#ef4444' :
+                                    c.type === 'modifier' ? '#8b5cf6' :
+                                    c.type === 'loot' ? '#f59e0b' :
+                                    '#6b7280';
+                                return (
+                                    <div
+                                        key={c.id}
+                                        className={minimapCard}
+                                        style={{
+                                            left: x,
+                                            top: y,
+                                            background: color,
+                                        }}
+                                    />
+                                );
+                            })}
+                            
+                            {/* Viewport rectangle */}
+                            <div
+                                className={minimapViewport}
+                                style={{
+                                    left: viewportMinimapX,
+                                    top: viewportMinimapY,
+                                    width: viewportMinimapW,
+                                    height: viewportMinimapH,
+                                }}
+                            />
+                        </div>
+                    </div>
+                );
+            })()}
+
             <div
                 ref={canvasRef}
                 className={boardCanvas}
                 style={{
-                    transform: `translate(${st.cameraX}px, ${st.cameraY}px)`,
+                    transform: `translate(${st.cameraX}px, ${st.cameraY}px) scale(${st.zoom})`,
+                    transformOrigin: '0 0',
                 }}
             >
                 {st.cards.map((c) => {
