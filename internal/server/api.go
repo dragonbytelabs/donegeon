@@ -1111,4 +1111,9 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 
 		writeJSON(w, stats)
 	})
+
+	Handle(mux, rr, "GET /api/dev/config", "Get balance config (dev only)", "", func(w http.ResponseWriter, r *http.Request) {
+		// TODO: Add authentication for /api/dev/* endpoints
+		writeJSON(w, engine.Config)
+	})
 }
