@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"donegeon/internal/building"
+	"donegeon/internal/config"
 	"donegeon/internal/deck"
 	"donegeon/internal/game"
 	"donegeon/internal/loot"
@@ -16,6 +17,7 @@ import (
 	"donegeon/internal/recipe"
 	"donegeon/internal/server"
 	"donegeon/internal/task"
+	"donegeon/internal/telemetry"
 	"donegeon/internal/villager"
 	"donegeon/internal/world"
 	"donegeon/internal/zombie"
@@ -58,6 +60,7 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 	projectRepo := project.NewMemoryRepo()
 	cardRepo := game.NewMemoryCardRepo()
 	gameStateRepo := game.NewMemoryGameStateRepo()
+	telemetryRepo := telemetry.NewMemoryRepository()
 
 	clock := game.RealClock{}
 
@@ -75,6 +78,8 @@ func SeedGame(ctx context.Context) (*server.App, error) {
 		Cards:     cardRepo,
 		GameState: gameStateRepo,
 		Clock:     clock,
+		Telemetry: telemetryRepo,
+		Config:    config.FromEnv(), // Load from environment variables
 	}
 
 	bootNow := engine.Clock.Now()

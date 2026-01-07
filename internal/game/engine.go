@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"donegeon/internal/building"
+	"donegeon/internal/config"
 	"donegeon/internal/deck"
 	"donegeon/internal/loot"
 	"donegeon/internal/modifier"
@@ -34,6 +35,7 @@ type Engine struct {
 	GameState GameStateRepository
 	Clock     Clock
 	Telemetry telemetry.Repository
+	Config    config.Balance
 }
 
 type DayTickResult struct {
@@ -92,7 +94,7 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 	}
 
 	zSpawned := 0
-	const maxZombiesPerDay = 5 // Cap to prevent overwhelming the player
+	maxZombiesPerDay := e.Config.MaxZombiesPerDay
 
 	for _, t := range liveTasks {
 		if t.Completed {
@@ -125,9 +127,9 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 
 		// important ignored too long (only if seal exists)
 		if mods.Important != nil && zSpawned < maxZombiesPerDay {
-			ignoreDays := 2
+			ignoreDays := e.Config.ImportantIgnoreDays
 			if mods.Important.MaxCharges > 0 && mods.Important.Charges > 0 {
-				ignoreDays = 1
+				ignoreDays = e.Config.ImportantIgnoreDaysFast
 			}
 
 			if t.LiveAt != nil {
@@ -214,17 +216,17 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 	}
 
 	// Global penalties
-	lootPenalty := min(50, zTotal*10)
-	packCost := min(100, zTotal*15)
-	overrun := zTotal >= 5
+	lootPenalty := min(e.Config.MaxLootPenalty, zTotal*e.Config.LootPenaltyPerZombie)
+	packCost := min(e.Config.MaxPackCost, zTotal*e.Config.PackCostPerZombie)
+	overrun := zTotal >= e.Config.OverrunThreshold
 
 	// Apply tired status to villagers if zombie count is high
-	if zTotal >= 4 {
+	if zTotal >= e.Config.TiredThreshold {
 		// Get all villagers
 		villagers, err := e.Villagers.List(ctx)
 		if err == nil {
-			// Make villagers tired for 1 day for every 2 zombies over 3
-			daysToTire := (zTotal - 3) / 2
+			// Make villagers tired for 1 day for every 2 zombies over threshold
+			daysToTire := (zTotal - (e.Config.TiredThreshold - 1)) / 2
 			if daysToTire < 1 {
 				daysToTire = 1
 			}
