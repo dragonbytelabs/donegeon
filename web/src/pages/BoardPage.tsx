@@ -706,6 +706,7 @@ type State = {
     // Detail panel
     detailPanelCard: string | null; // Card to show details for
     hoveredCard: string | null; // Card currently being hovered
+    editingBlankTask: { name: string; description: string } | null; // Edit state for blank tasks
     
     // Help & Tooltips
     showHelp: boolean;
@@ -735,6 +736,7 @@ export default function BoardPage() {
         hoverTarget: null,
         detailPanelCard: null,
         hoveredCard: null,
+        editingBlankTask: null,
         showHelp: false,
         showDebug: false,
         tooltip: null,
@@ -892,6 +894,8 @@ export default function BoardPage() {
         return new Map();
     };
 
+    // WARNING: refresh() wipes out blank tasks! Only use for major state changes like day tick.
+    // For most card operations, update state locally instead.
     async function refresh() {
         update((d) => {
             d.loading = true;
@@ -1156,10 +1160,7 @@ export default function BoardPage() {
                         }
                     })();
                     break;
-                case 'r': // R - Refresh
-                    e.preventDefault();
-                    void refresh();
-                    break;
+
                 case 'escape': // Escape - Close detail panel
                     update(d => { 
                         d.detailPanelCard = null;
@@ -1454,8 +1455,9 @@ export default function BoardPage() {
                 const draggedCard = d.cards[cardIndex];
                 d.hoverTarget = null;
 
-                // Check if hovering over Collect deck (for loot cards)
-                if (draggedCard.type === "loot") {
+                // Check if hovering over Collect deck (for loot cards and blank tasks)
+                const isCollectable = draggedCard.type === "loot" || (draggedCard.type === "task" && draggedCard.data?.is_blank);
+                if (isCollectable) {
                     const collectDeck = document.getElementById("collect-deck");
                     if (collectDeck) {
                         const deckRect = collectDeck.getBoundingClientRect();
@@ -1544,25 +1546,59 @@ export default function BoardPage() {
                     // Update inventory via API
                     await api.collectLoot(lootData.loot_type, lootData.loot_amount);
                     
-                    // Remove loot card from board
+                    // Remove loot card from board and save
                     update((d) => {
                         d.cards = d.cards.filter(c => c.id !== draggedCard.id);
                         d.dragging = null;
                         d.hoverTarget = null;
+                        // Update inventory locally to avoid refresh
+                        if (d.inventory && lootData.loot_type in d.inventory) {
+                            (d.inventory as any)[lootData.loot_type] = ((d.inventory as any)[lootData.loot_type] || 0) + lootData.loot_amount;
+                        }
+                        // Save immediately with the updated cards
+                        saveBoardState(d.cards);
                     });
-                    
-                    // Refresh inventory display
-                    await refresh();
                     
                     console.log(`Collected ${lootData.loot_amount} ${lootData.loot_type}`);
                 } catch (error) {
                     console.error("Failed to collect loot:", error);
                 }
                 
-                saveBoardState(st.cards.filter(c => c.id !== draggedCard.id));
                 window.removeEventListener("mousemove", handleMove);
                 window.removeEventListener("mouseup", handleUp);
                 return;
+            }
+
+            // Handle blank task recycling for coins
+            if (draggedCard && currentHoverTarget === "collect-deck" && draggedCard.type === "task") {
+                const taskData = draggedCard.data as any;
+                if (taskData.is_blank) {
+                    try {
+                        // Give 1 coin for recycling a blank task
+                        await api.collectLoot("coin", 1);
+                        
+                        // Remove blank task card from board and save
+                        update((d) => {
+                            d.cards = d.cards.filter(c => c.id !== draggedCard.id);
+                            d.dragging = null;
+                            d.hoverTarget = null;
+                            // Update inventory locally instead of full refresh
+                            if (d.inventory) {
+                                d.inventory.coin = (d.inventory.coin || 0) + 1;
+                            }
+                            // Save immediately with the updated cards
+                            saveBoardState(d.cards);
+                        });
+                        
+                        console.log("Recycled blank task for 1 coin");
+                    } catch (error) {
+                        console.error("Failed to recycle blank task:", error);
+                    }
+                    
+                    window.removeEventListener("mousemove", handleMove);
+                    window.removeEventListener("mouseup", handleUp);
+                    return;
+                }
             }
 
             if (draggedCard && targetCard) {
@@ -1680,10 +1716,15 @@ export default function BoardPage() {
                 
                 d.error = rewardMsg;
                 setTimeout(() => update((d) => { d.error = null; }), 4000);
+                
+                // Update villager stamina locally if there was a villager in the stack
+                const villagerCard = d.cards.find(c => stackCardIds.has(c.id) && c.type === 'villager');
+                if (villagerCard) {
+                    const villagerData = villagerCard.data as Villager;
+                    // Restore stamina based on task completion
+                    villagerData.stamina = Math.min(villagerData.stamina + 1, villagerData.max_stamina);
+                }
             });
-
-            // Refresh to get updated data (stamina returned, task moved to completed zone, quest progress)
-            await refresh();
 
         } catch (e: any) {
             console.error('Failed to complete task:', e);
@@ -1731,10 +1772,6 @@ export default function BoardPage() {
                             restackCards(taskCard, d.cards);
                         }
                     });
-
-                    console.log("Calling refresh...");
-                    await refresh();
-                    console.log("Refresh complete");
                 } else {
                     console.log("Villager has no stamina");
                     update((d) => {
@@ -1793,7 +1830,6 @@ export default function BoardPage() {
                         restackCards(taskCard, d.cards);
                     }
                 });
-                await refresh();
             }
 
             // Task + Task = Check for recipe
@@ -1828,7 +1864,7 @@ export default function BoardPage() {
                             });
                         }
                     });
-                    await refresh();
+                    // Recipe execution already updated backend, no need to refresh
                 } catch (e: any) {
                     console.log("No recipe found:", e.message);
                     // No recipe found, ignore
@@ -1904,9 +1940,10 @@ export default function BoardPage() {
                     update((d) => {
                         d.error = `✓ ${villager.name} attacked zombie!`;
                         setTimeout(() => update((d) => { d.error = null; }), 2000);
+                        // Remove zombie card from board after attack
+                        const zombieCardId = draggedCard.type === 'zombie' ? draggedCard.id : targetCard.id;
+                        d.cards = d.cards.filter(c => c.id !== zombieCardId);
                     });
-
-                    await refresh();
                 } else {
                     console.log("Villager has insufficient stamina");
                     update((d) => {
@@ -2073,6 +2110,7 @@ export default function BoardPage() {
         try {
             const result = await api.openDeck(deckId);
             console.log("Deck opened, drops:", result.drops);
+            console.log("Drop types:", result.drops.map(d => d.type));
 
             // Add new cards to board
             update((d) => {
@@ -2080,6 +2118,7 @@ export default function BoardPage() {
                 let y = 600;
 
                 result.drops.forEach((drop, i) => {
+                    console.log(`Processing drop ${i}:`, drop.type, drop);
                     const cardId = `drop-${Date.now()}-${i}`;
 
                     if (drop.type === "loot") {
@@ -2112,13 +2151,29 @@ export default function BoardPage() {
                             type: "task",
                             x: x + i * 140,
                             y: y,
-                            data: { id: -1, name: "Blank Task", zone: "inbox", completed: false },
+                            data: { 
+                                id: Date.now() + i, // Unique temporary ID
+                                name: "Blank Task", 
+                                zone: "live", // Mark as live so it persists
+                                completed: false,
+                                is_blank: true // Flag to identify as editable blank task
+                            },
                         });
                     }
                 });
             });
 
-            await refresh();
+            // Don't refresh here - it would remove blank task cards that aren't in the backend yet
+            // Just update the decks list to reflect the new times_opened count
+            const updatedDeck = st.decks.find(d => d.id === deckId);
+            if (updatedDeck) {
+                update(d => {
+                    const deckToUpdate = d.decks.find(deck => deck.id === deckId);
+                    if (deckToUpdate) {
+                        deckToUpdate.times_opened++;
+                    }
+                });
+            }
         } catch (e: any) {
             console.error("Failed to open deck:", e);
             update((d) => {
@@ -2350,7 +2405,13 @@ export default function BoardPage() {
                         className={detailButton}
                         onClick={(e) => {
                             e.stopPropagation();
-                            update(d => { d.detailPanelCard = c.id; });
+                            update(d => { 
+                                d.detailPanelCard = c.id;
+                                // Initialize editing state for blank tasks
+                                if ((c.data as any).is_blank) {
+                                    d.editingBlankTask = { name: '', description: '' };
+                                }
+                            });
                         }}
                     >
                         ℹ️
@@ -2371,6 +2432,23 @@ export default function BoardPage() {
                         <div className={cardIcon}>📋</div>
                         <div className={cardTitle}>{t.name}</div>
                         {t.description && <div className={cardSubtitle}>{t.description}</div>}
+                        {(t as any).is_blank && (
+                            <div
+                                className={cardSubtitle}
+                                style={{
+                                    marginTop: "8px",
+                                    color: "#f59e0b",
+                                    fontWeight: 700,
+                                    fontSize: "10px",
+                                    background: "rgba(245, 158, 11, 0.1)",
+                                    padding: "2px 6px",
+                                    borderRadius: "4px",
+                                    display: "inline-block"
+                                }}
+                            >
+                                ✏️ Click ℹ️ to edit
+                            </div>
+                        )}
                         {t.assigned_villager && (
                             <div
                                 className={cardSubtitle}
@@ -2950,7 +3028,10 @@ export default function BoardPage() {
                             </div>
                             <div
                                 className={detailPanelClose}
-                                onClick={() => update(d => { d.detailPanelCard = null; })}
+                                onClick={() => update(d => { 
+                                    d.detailPanelCard = null;
+                                    d.editingBlankTask = null;
+                                })}
                             >
                                 ×
                             </div>
@@ -2960,17 +3041,151 @@ export default function BoardPage() {
                             <>
                                 <div className={slotSection}>
                                     <div className={slotLabel}>Task</div>
-                                    <div className={`${slot} ${slotFilled}`}>
-                                        <div>
-                                            <div style={{ fontSize: 24, marginBottom: 8 }}>📋</div>
-                                            <div style={{ fontWeight: 700 }}>{(taskCard.data as Task).name}</div>
-                                            {(taskCard.data as Task).description && (
-                                                <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>
-                                                    {(taskCard.data as Task).description}
-                                                </div>
-                                            )}
+                                    {(taskCard.data as any).is_blank ? (
+                                        <div style={{ padding: '16px' }}>
+                                            <div style={{ marginBottom: '12px' }}>
+                                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>
+                                                    Task Name
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Enter task name..."
+                                                    value={st.editingBlankTask?.name || ''}
+                                                    onChange={(e) => update(d => {
+                                                        if (!d.editingBlankTask) {
+                                                            d.editingBlankTask = { name: e.target.value, description: '' };
+                                                        } else {
+                                                            d.editingBlankTask.name = e.target.value;
+                                                        }
+                                                    })}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '8px 12px',
+                                                        fontSize: '14px',
+                                                        border: '2px solid #334155',
+                                                        borderRadius: '6px',
+                                                        background: '#1e293b',
+                                                        color: 'white',
+                                                        outline: 'none',
+                                                    }}
+                                                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                                                    onBlur={(e) => e.target.style.borderColor = '#334155'}
+                                                />
+                                            </div>
+                                            <div style={{ marginBottom: '12px' }}>
+                                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 600, color: '#94a3b8' }}>
+                                                    Description (optional)
+                                                </label>
+                                                <textarea
+                                                    placeholder="Enter description..."
+                                                    value={st.editingBlankTask?.description || ''}
+                                                    onChange={(e) => update(d => {
+                                                        if (!d.editingBlankTask) {
+                                                            d.editingBlankTask = { name: '', description: e.target.value };
+                                                        } else {
+                                                            d.editingBlankTask.description = e.target.value;
+                                                        }
+                                                    })}
+                                                    rows={3}
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '8px 12px',
+                                                        fontSize: '14px',
+                                                        border: '2px solid #334155',
+                                                        borderRadius: '6px',
+                                                        background: '#1e293b',
+                                                        color: 'white',
+                                                        outline: 'none',
+                                                        resize: 'vertical',
+                                                        fontFamily: 'inherit',
+                                                    }}
+                                                    onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                                                    onBlur={(e) => e.target.style.borderColor = '#334155'}
+                                                />
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    if (!st.editingBlankTask?.name?.trim()) {
+                                                        update(d => { d.error = '✗ Task name is required'; });
+                                                        setTimeout(() => update(d => { d.error = null; }), 3000);
+                                                        return;
+                                                    }
+                                                    
+                                                    try {
+                                                        // Create the task via API
+                                                        const newTask = await api.createTask(
+                                                            st.editingBlankTask.name.trim(),
+                                                            st.editingBlankTask.description.trim()
+                                                        );
+                                                        
+                                                        // Move to live zone
+                                                        await api.moveTaskToLive(newTask.id);
+                                                        
+                                                        // Update the card with the real task data
+                                                        update(d => {
+                                                            const cardIndex = d.cards.findIndex(c => c.id === taskCard.id);
+                                                            if (cardIndex !== -1) {
+                                                                const card = d.cards[cardIndex];
+                                                                const oldCardId = card.id;
+                                                                const newCardId = `task-${newTask.id}`;
+                                                                
+                                                                // Update card data and ID
+                                                                card.id = newCardId;
+                                                                card.data = { ...newTask, zone: 'live' };
+                                                                delete (card.data as any).is_blank;
+                                                                
+                                                                // Update any child cards that reference this card
+                                                                d.cards.forEach(c => {
+                                                                    if (c.parentId === oldCardId) {
+                                                                        c.parentId = newCardId;
+                                                                    }
+                                                                });
+                                                                
+                                                                console.log(`Updated blank task card from ${oldCardId} to ${newCardId}`);
+                                                            }
+                                                            d.editingBlankTask = null;
+                                                            d.detailPanelCard = null;
+                                                            d.error = '✓ Task created!';
+                                                        });
+                                                        
+                                                        setTimeout(() => update(d => { d.error = null; }), 2000);
+                                                    } catch (error: any) {
+                                                        console.error('Failed to create task:', error);
+                                                        update(d => { d.error = `✗ ${error.message || 'Failed to create task'}`; });
+                                                        setTimeout(() => update(d => { d.error = null; }), 3000);
+                                                    }
+                                                }}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '12px',
+                                                    fontSize: '14px',
+                                                    fontWeight: 700,
+                                                    background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer',
+                                                    transition: 'transform 0.1s',
+                                                }}
+                                                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                            >
+                                                💾 Save Task
+                                            </button>
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className={`${slot} ${slotFilled}`}>
+                                            <div>
+                                                <div style={{ fontSize: 24, marginBottom: 8 }}>📋</div>
+                                                <div style={{ fontWeight: 700 }}>{(taskCard.data as Task).name}</div>
+                                                {(taskCard.data as Task).description && (
+                                                    <div style={{ fontSize: 11, marginTop: 4, opacity: 0.7 }}>
+                                                        {(taskCard.data as Task).description}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className={slotSection}>

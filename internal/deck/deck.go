@@ -205,6 +205,9 @@ func (d *Definition) Open() []CardDrop {
 					drop.LootAmount = entry.LootAmount
 				case "villager":
 					drop.VillagerID = "new_villager"
+				case "blank_task":
+					// Blank task card - no additional data needed
+					// Frontend will create a placeholder task card
 				}
 
 				drops = append(drops, drop)
