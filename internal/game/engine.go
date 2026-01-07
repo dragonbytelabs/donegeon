@@ -13,6 +13,7 @@ import (
 	"donegeon/internal/quest"
 	"donegeon/internal/recipe"
 	"donegeon/internal/task"
+	"donegeon/internal/telemetry"
 	"donegeon/internal/villager"
 	"donegeon/internal/world"
 	"donegeon/internal/zombie"
@@ -32,6 +33,7 @@ type Engine struct {
 	Cards     CardRepository
 	GameState GameStateRepository
 	Clock     Clock
+	Telemetry telemetry.Repository
 }
 
 type DayTickResult struct {
@@ -241,6 +243,17 @@ func (e Engine) DayTick(ctx context.Context) (DayTickResult, error) {
 
 	if err := e.World.Set(ctx, w); err != nil {
 		return DayTickResult{}, err
+	}
+
+	// Record telemetry
+	if e.Telemetry != nil {
+		_ = e.Telemetry.RecordEvent(telemetry.EventDayTick, telemetry.EventMetadata{
+			"day":               w.Day.Format("2006-01-02"),
+			"zombies_spawned":   zSpawned,
+			"zombies_total":     zTotal,
+			"villagers_blocked": block,
+			"loot_penalty_pct":  lootPenalty,
+		})
 	}
 
 	return DayTickResult{
@@ -809,6 +822,16 @@ func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResul
 	// Progress quests
 	_ = e.Progress(ctx)
 
+	// Record telemetry
+	if e.Telemetry != nil {
+		_ = e.Telemetry.RecordEvent(telemetry.EventTaskCompleted, telemetry.EventMetadata{
+			"task_id":    taskID,
+			"task_name":  t.Name,
+			"task_type":  string(t.InferType()),
+			"loot_count": len(drops),
+		})
+	}
+
 	return CompleteTaskResult{
 		Task:      t,
 		LootDrops: drops,
@@ -923,6 +946,17 @@ func (e Engine) OpenDeck(ctx context.Context, deckID string) (deck.OpenResult, e
 	d.TimesOpened++
 	if err := e.Decks.Update(ctx, d); err != nil {
 		return deck.OpenResult{}, err
+	}
+
+	// Record telemetry
+	if e.Telemetry != nil {
+		_ = e.Telemetry.RecordEvent(telemetry.EventDeckOpened, telemetry.EventMetadata{
+			"deck_id":      deckID,
+			"deck_type":    string(d.Type),
+			"cost_paid":    cost,
+			"times_opened": d.TimesOpened,
+			"drops_count":  len(drops),
+		})
 	}
 
 	return deck.OpenResult{
