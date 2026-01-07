@@ -624,6 +624,13 @@ func (e Engine) AttachModifier(ctx context.Context, taskID int, card modifier.Ca
 		return AttachModifierResult{}, err
 	}
 
+	// Set task_id to track which task this modifier is attached to
+	created.TaskID = &taskID
+	created, err = e.Modifiers.Update(ctx, created)
+	if err != nil {
+		return AttachModifierResult{}, err
+	}
+
 	// attach
 	t.AddModifier(created.ID)
 	updated, err := e.Tasks.Update(ctx, t)
@@ -768,8 +775,26 @@ func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResul
 			drops = loot.ApplyPenalty(drops, w.LootPenaltyPct)
 		}
 
-		// TODO: Add salvage logic when modifiers have task_id field
-		// For now, spent modifiers just stop working but don't salvage
+		// Salvage spent modifiers attached to this task
+		if e.Modifiers != nil {
+			allMods, err := e.Modifiers.List(ctx)
+			if err == nil {
+				for _, mod := range allMods {
+					// Check if this modifier was used on this task and is now spent
+					if mod.TaskID != nil && *mod.TaskID == t.ID && mod.Spent() {
+						// Salvage rules: convert spent modifier to loot
+						salvageLoot := salvageModifier(mod)
+						if len(salvageLoot) > 0 {
+							drops = append(drops, salvageLoot...)
+						}
+
+						// Update modifier status
+						mod.Status = modifier.StatusSpent
+						_, _ = e.Modifiers.Update(ctx, mod)
+					}
+				}
+			}
+		}
 
 		// Add loot to inventory
 		if len(drops) > 0 {
@@ -788,6 +813,28 @@ func (e Engine) CompleteTask(ctx context.Context, taskID int) (CompleteTaskResul
 		Task:      t,
 		LootDrops: drops,
 	}, nil
+}
+
+// salvageModifier converts a spent modifier into loot
+func salvageModifier(mod modifier.Card) []loot.Drop {
+	// Salvage rules by modifier type
+	switch mod.Type {
+	case modifier.RecurringContract:
+		// Recurring contracts salvage into paper
+		return []loot.Drop{{Type: loot.Paper, Amount: 1}}
+	case modifier.DeadlinePin:
+		// Deadline pins don't salvage (permanent)
+		return nil
+	case modifier.ScheduleToken:
+		// Schedule tokens salvage into ink
+		return []loot.Drop{{Type: loot.Ink, Amount: 1}}
+	case modifier.ImportanceSeal:
+		// Importance seals salvage into paper
+		return []loot.Drop{{Type: loot.Paper, Amount: 1}}
+	default:
+		// Default: salvage into 1 coin
+		return []loot.Drop{{Type: loot.Coin, Amount: 1}}
+	}
 }
 
 // OpenDeck opens a deck/pack and returns the drops
