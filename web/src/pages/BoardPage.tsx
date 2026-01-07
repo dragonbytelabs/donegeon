@@ -31,8 +31,6 @@ const board = css`
 
 const boardCanvas = css`
   position: absolute;
-  width: 4000px;
-  height: 4000px;
   top: 0;
   left: 0;
   pointer-events: none;
