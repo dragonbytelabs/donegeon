@@ -18,6 +18,7 @@ import (
 	"donegeon/internal/quest"
 	"donegeon/internal/recipe"
 	"donegeon/internal/task"
+	"donegeon/internal/telemetry"
 	"donegeon/internal/villager"
 	"donegeon/internal/world"
 	"donegeon/internal/zombie"
@@ -1085,5 +1086,29 @@ func RegisterAPIRoutes(mux *http.ServeMux, rr *RouteRegistry, app *App) {
 			return
 		}
 		writeJSON(w, cards)
+	})
+
+	// Dev/Balance endpoints
+	Handle(mux, rr, "GET /api/dev/stats", "Get balance dashboard stats", "", func(w http.ResponseWriter, r *http.Request) {
+		if engine.Telemetry == nil {
+			http.Error(w, "telemetry not enabled", 500)
+			return
+		}
+
+		// Get all events since beginning (or last 30 days)
+		since := time.Now().AddDate(0, 0, -30)
+		events, err := engine.Telemetry.GetEvents(since, nil)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		stats, err := telemetry.CalculateStats(events, since)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		writeJSON(w, stats)
 	})
 }
