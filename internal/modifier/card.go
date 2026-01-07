@@ -29,6 +29,9 @@ type Card struct {
 
 	Status Status `json:"status"`
 
+	// TaskID: tracks which task this modifier was last used on (for salvage)
+	TaskID *int `json:"task_id,omitempty"`
+
 	// Optional payload data depending on Type
 	DeadlineAt         *time.Time `json:"deadline_at,omitempty"`          // DeadlinePin
 	ScheduledAt        *time.Time `json:"scheduled_at,omitempty"`         // ScheduleToken (v0.1 mostly for UI)

@@ -1455,8 +1455,13 @@ export default function BoardPage() {
                 const draggedCard = d.cards[cardIndex];
                 d.hoverTarget = null;
 
-                // Check if hovering over Collect deck (for loot cards and blank tasks)
-                const isCollectable = draggedCard.type === "loot" || (draggedCard.type === "task" && draggedCard.data?.is_blank);
+                // Check if hovering over Collect deck (for loot cards, blank tasks, and spent modifiers)
+                const isSpentModifier = draggedCard.type === "modifier" && 
+                    draggedCard.data?.max_charges > 0 && 
+                    draggedCard.data?.charges <= 0;
+                const isCollectable = draggedCard.type === "loot" || 
+                    (draggedCard.type === "task" && draggedCard.data?.is_blank) ||
+                    isSpentModifier;
                 if (isCollectable) {
                     const collectDeck = document.getElementById("collect-deck");
                     if (collectDeck) {
@@ -1601,6 +1606,64 @@ export default function BoardPage() {
                 }
             }
 
+            // Handle spent modifier salvaging
+            if (draggedCard && currentHoverTarget === "collect-deck" && draggedCard.type === "modifier") {
+                const modData = draggedCard.data as any;
+                if (modData.max_charges > 0 && modData.charges <= 0) {
+                    try {
+                        // Salvage rules (matches backend)
+                        let lootType = "coin";
+                        let lootAmount = 1;
+                        let lootEmoji = "🪙";
+                        
+                        switch (modData.type) {
+                            case 'recurring_contract':
+                                lootType = "paper";
+                                lootEmoji = "📄";
+                                break;
+                            case 'schedule_token':
+                                lootType = "ink";
+                                lootEmoji = "🖋";
+                                break;
+                            case 'importance_seal':
+                                lootType = "paper";
+                                lootEmoji = "📄";
+                                break;
+                            default:
+                                lootType = "coin";
+                                lootEmoji = "🪙";
+                                break;
+                        }
+                        
+                        // Collect the salvage loot
+                        await api.collectLoot(lootType, lootAmount);
+                        
+                        // Remove spent modifier from board and save
+                        update((d) => {
+                            d.cards = d.cards.filter(c => c.id !== draggedCard.id);
+                            d.dragging = null;
+                            d.hoverTarget = null;
+                            // Update inventory locally instead of full refresh
+                            if (d.inventory && lootType in d.inventory) {
+                                (d.inventory as any)[lootType] = ((d.inventory as any)[lootType] || 0) + lootAmount;
+                            }
+                            d.error = `✓ Salvaged ${modData.type.replace(/_/g, ' ')} → ${lootEmoji} ${lootType}`;
+                            setTimeout(() => update((d) => { d.error = null; }), 2000);
+                            // Save immediately with the updated cards
+                            saveBoardState(d.cards);
+                        });
+                        
+                        console.log(`Salvaged ${modData.type} for ${lootAmount} ${lootType}`);
+                    } catch (error) {
+                        console.error("Failed to salvage modifier:", error);
+                    }
+                    
+                    window.removeEventListener("mousemove", handleMove);
+                    window.removeEventListener("mouseup", handleUp);
+                    return;
+                }
+            }
+
             if (draggedCard && targetCard) {
                 console.log("Calling handleCardDrop...");
                 handleCardDrop(draggedCard, targetCard);
@@ -1680,10 +1743,16 @@ export default function BoardPage() {
                 };
                 addDescendants(rootCard.id);
                 
-                // Break up the entire stack - unparent ALL cards in the stack
+                // Break up the entire stack - unparent ALL cards in the stack and spread horizontally
+                const CARD_SPACING = 180; // Horizontal spacing between cards
+                let cardIndex = 0;
                 d.cards.forEach(c => {
-                    if (stackCardIds.has(c.id)) {
+                    if (stackCardIds.has(c.id) && c.id !== `task-${taskId}`) {
                         c.parentId = undefined;
+                        // Spread cards horizontally to the right of the task's position
+                        c.x = taskCard.x + (cardIndex + 1) * CARD_SPACING;
+                        c.y = taskCard.y; // Same Y position as the task
+                        cardIndex++;
                     }
                 });
                 
@@ -1699,13 +1768,7 @@ export default function BoardPage() {
                         // Charge-based modifiers: decrement on use
                         if (modData.max_charges > 0) {
                             modData.charges = Math.max(0, (modData.charges || 0) - 1);
-                            
-                            // If spent (no charges left), remove it
-                            if (modData.charges <= 0) {
-                                return false;
-                            }
-                            
-                            // Update the data
+                            // Update the data (but keep spent modifiers on board for manual salvage)
                             c.data = modData;
                         }
                     }
@@ -2668,20 +2731,35 @@ export default function BoardPage() {
                 schedule_token: "📅",
                 importance_seal: "⚠️",
             };
+            
+            // Check if modifier is spent
+            const isSpent = m.status === 'spent' || (m.max_charges > 0 && m.charges <= 0);
 
             return (
                 <div
                     className={card}
-                    style={{ ...style, background: "linear-gradient(180deg, #e0e7ff, #c7d2fe)" }}
+                    style={{ 
+                        ...style, 
+                        background: isSpent 
+                            ? "linear-gradient(180deg, #9ca3af, #6b7280)" 
+                            : "linear-gradient(180deg, #e0e7ff, #c7d2fe)",
+                        opacity: isSpent ? 0.7 : 1,
+                        cursor: isSpent ? 'grab' : 'grab'
+                    }}
                     onMouseDown={(e) => handleCardMouseDown(c.id, e)}
                 >
-                    <div className={cardHeader}>Modifier</div>
+                    <div className={cardHeader}>{isSpent ? "Spent Modifier" : "Modifier"}</div>
                     <div className={cardBody}>
                         <div className={cardIcon}>{modIcons[m.type] || "✨"}</div>
                         <div className={cardTitle}>
                             {m.type.replace(/_/g, " ")}
                         </div>
-                        {m.max_charges > 0 && (
+                        {isSpent && (
+                            <div className={cardSubtitle} style={{ color: "#ef4444", fontWeight: 700 }}>
+                                SPENT
+                            </div>
+                        )}
+                        {m.max_charges > 0 && !isSpent && (
                             <div className={cardSubtitle}>
                                 {m.charges}/{m.max_charges} uses
                             </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { css } from "@linaria/core";
 import { Link } from "react-router";
 import { api } from "../lib/api";
