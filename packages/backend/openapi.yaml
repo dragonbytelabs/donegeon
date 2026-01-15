@@ -1,0 +1,2213 @@
+openapi: 3.0.3
+info:
+  title: Donegeon Todoist API
+  description: Hono-based API server for task management using Todoist v1 API
+  version: 1.0.0
+  contact:
+    name: Donegeon
+    url: https://github.com/donegeon
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+  - url: https://api.donegeon.com
+    description: Production server
+
+security:
+  - bearerAuth: []
+
+paths:
+  # Health Check
+  /healthz:
+    get:
+      summary: Health check endpoint
+      description: Check if the API server is running
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # Version
+  /api/version:
+    get:
+      summary: Get API version
+      description: Returns the current API version
+      responses:
+        '200':
+          description: API version information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  api_version:
+                    type: string
+                    example: "v1"
+
+  # User
+  /api/user:
+    get:
+      summary: Get current user
+      description: Get information about the authenticated user
+      responses:
+        '200':
+          description: User information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Tasks
+  /api/tasks:
+    get:
+      summary: Get tasks
+      description: Get all active tasks with optional filtering and pagination
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+          description: Filter by project ID
+        - name: section_id
+          in: query
+          schema:
+            type: string
+          description: Filter by section ID
+        - name: parent_id
+          in: query
+          schema:
+            type: string
+          description: Filter by parent task ID
+        - name: label
+          in: query
+          schema:
+            type: string
+          description: Filter by label name
+        - name: ids
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of task IDs
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Number of items per page
+      responses:
+        '200':
+          description: Paginated list of tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTasks'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create task
+      description: Create a new task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tasks/quick:
+    post:
+      summary: Quick add task
+      description: Create a task using natural language parsing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickAddTaskRequest'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Quick add response
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/tasks/filter:
+    get:
+      summary: Get tasks by filter
+      description: Get tasks matching a filter query
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+          description: Filter query string
+        - name: lang
+          in: query
+          schema:
+            type: string
+            enum: [en, da, pl, zh, ko, de, pt, ja, it, fr, sv, ru, es, nl, fi, nb, tw]
+          description: Query language
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Filtered tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTasks'
+
+  /api/tasks/completed/by_completion_date:
+    get:
+      summary: Get completed tasks by completion date
+      description: Get completed tasks within a date range
+      parameters:
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Start date (ISO 8601)
+        - name: until
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: End date (ISO 8601)
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: section_id
+          in: query
+          schema:
+            type: string
+        - name: parent_id
+          in: query
+          schema:
+            type: string
+        - name: filter_query
+          in: query
+          schema:
+            type: string
+        - name: filter_lang
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Completed tasks by completion date
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  next_cursor:
+                    type: string
+
+  /api/tasks/completed/by_due_date:
+    get:
+      summary: Get completed tasks by due date
+      description: Get completed tasks by their original due date
+      parameters:
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: workspace_id
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: section_id
+          in: query
+          schema:
+            type: string
+        - name: parent_id
+          in: query
+          schema:
+            type: string
+        - name: filter_query
+          in: query
+          schema:
+            type: string
+        - name: filter_lang
+          in: query
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Completed tasks by due date
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Task'
+                  next_cursor:
+                    type: string
+
+  /api/tasks/{task_id}:
+    get:
+      summary: Get task
+      description: Get a single task by ID
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Task ID
+        - name: public_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Update task
+      description: Update an existing task
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Task ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete task
+      description: Delete a task permanently
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Task ID
+      responses:
+        '204':
+          description: Task deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{task_id}/close:
+    post:
+      summary: Close task
+      description: Complete a task (or reschedule if recurring)
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Task ID
+      responses:
+        '204':
+          description: Task closed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{task_id}/reopen:
+    post:
+      summary: Reopen task
+      description: Uncomplete a completed task
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Task ID
+      responses:
+        '200':
+          description: Task reopened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/tasks/{task_id}/move:
+    post:
+      summary: Move task
+      description: Move a task to a different project, section, or parent
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Task ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveTaskRequest'
+      responses:
+        '200':
+          description: Task moved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Projects
+  /api/projects:
+    get:
+      summary: Get projects
+      description: Get all active projects
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProjects'
+
+    post:
+      summary: Create project
+      description: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/projects/archived:
+    get:
+      summary: Get archived projects
+      description: Get all archived projects
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Archived projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedProjects'
+
+  /api/projects/{project_id}:
+    get:
+      summary: Get project
+      description: Get a single project by ID
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project ID
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Update project
+      description: Update an existing project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Project updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete project
+      description: Delete a project permanently
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project ID
+      responses:
+        '204':
+          description: Project deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/projects/{project_id}/archive:
+    post:
+      summary: Archive project
+      description: Archive a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project ID
+      responses:
+        '200':
+          description: Project archived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/projects/{project_id}/unarchive:
+    post:
+      summary: Unarchive project
+      description: Restore an archived project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project ID
+      responses:
+        '200':
+          description: Project unarchived
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/projects/{project_id}/collaborators:
+    get:
+      summary: Get project collaborators
+      description: Get all collaborators for a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Project ID
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: public_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project collaborators
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        email:
+                          type: string
+                  next_cursor:
+                    type: string
+
+  # Comments
+  /api/comments:
+    get:
+      summary: Get comments
+      description: Get comments for a task or project
+      parameters:
+        - name: task_id
+          in: query
+          schema:
+            type: string
+          description: Filter by task ID
+        - name: project_id
+          in: query
+          schema:
+            type: string
+          description: Filter by project ID
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: public_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated comments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedComments'
+
+    post:
+      summary: Create comment
+      description: Create a new comment on a task or project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommentRequest'
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/comments/{comment_id}:
+    get:
+      summary: Get comment
+      description: Get a single comment by ID
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Comment ID
+      responses:
+        '200':
+          description: Comment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Update comment
+      description: Update an existing comment
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Comment ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                content:
+                  type: string
+                  description: Updated comment content
+              required:
+                - content
+      responses:
+        '200':
+          description: Comment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete comment
+      description: Delete a comment
+      parameters:
+        - name: comment_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Comment ID
+      responses:
+        '204':
+          description: Comment deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Sections
+  /api/sections:
+    get:
+      summary: Get sections
+      description: Get all sections, optionally filtered by project
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+          description: Filter by project ID
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated sections
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSections'
+
+    post:
+      summary: Create section
+      description: Create a new section in a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSectionRequest'
+      responses:
+        '201':
+          description: Section created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/sections/{section_id}:
+    get:
+      summary: Get section
+      description: Get a single section by ID
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Section ID
+        - name: public_key
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Section details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Update section
+      description: Update an existing section
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Section ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Updated section name
+              required:
+                - name
+      responses:
+        '200':
+          description: Section updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Section'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete section
+      description: Delete a section and all its tasks
+      parameters:
+        - name: section_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Section ID
+      responses:
+        '204':
+          description: Section deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Labels
+  /api/labels:
+    get:
+      summary: Get labels
+      description: Get all user labels
+      parameters:
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated labels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedLabels'
+
+    post:
+      summary: Create label
+      description: Create a new personal label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Label name
+                color:
+                  type: string
+                  description: Label color
+                order:
+                  type: integer
+                  description: Label order
+                is_favorite:
+                  type: boolean
+                  description: Whether label is favorite
+              required:
+                - name
+      responses:
+        '201':
+          description: Label created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/labels/{label_id}:
+    get:
+      summary: Get label
+      description: Get a single label by ID
+      parameters:
+        - name: label_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Label ID
+      responses:
+        '200':
+          description: Label details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Update label
+      description: Update an existing label
+      parameters:
+        - name: label_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Label ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Updated label name
+                color:
+                  type: string
+                  description: Updated label color
+                order:
+                  type: integer
+                  description: Updated label order
+                is_favorite:
+                  type: boolean
+                  description: Whether label is favorite
+      responses:
+        '200':
+          description: Label updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Label'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete label
+      description: Delete a personal label
+      parameters:
+        - name: label_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Label ID
+      responses:
+        '204':
+          description: Label deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/labels/shared:
+    get:
+      summary: Get shared labels
+      description: Get all shared labels used in tasks
+      parameters:
+        - name: omit_personal
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Whether to omit personal labels
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Shared labels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: string
+                  next_cursor:
+                    type: string
+
+    post:
+      summary: Rename shared label
+      description: Rename a shared label across all tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Current label name
+                new_name:
+                  type: string
+                  description: New label name
+              required:
+                - name
+                - new_name
+      responses:
+        '200':
+          description: Label renamed
+
+  # Activity Log
+  /api/activities:
+    get:
+      summary: Get activity log
+      description: Get activity events with optional filtering
+      parameters:
+        - name: object_type
+          in: query
+          schema:
+            type: string
+            enum: [project, item, note]
+          description: Filter by object type
+        - name: object_id
+          in: query
+          schema:
+            type: string
+          description: Filter by specific object ID
+        - name: parent_project_id
+          in: query
+          schema:
+            type: string
+          description: Filter by parent project ID
+        - name: parent_item_id
+          in: query
+          schema:
+            type: string
+          description: Filter by parent item ID
+        - name: initiator_id
+          in: query
+          schema:
+            type: string
+          description: Filter by user who initiated the event
+        - name: initiator_id_null
+          in: query
+          schema:
+            type: boolean
+          description: Filter by whether event has an initiator
+        - name: event_type
+          in: query
+          schema:
+            type: string
+            enum: [added, deleted, updated, completed, uncompleted, archived, unarchived, shared, left, reordered, moved]
+          description: Filter by event type
+        - name: object_event_types
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          description: Filter by object and event type combinations
+        - name: annotate_notes
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include note content in results
+        - name: annotate_parents
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Include parent object details
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Number of events per page
+      responses:
+        '200':
+          description: Activity events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ActivityEvent'
+                  next_cursor:
+                    type: string
+
+  # Productivity Stats
+  /api/tasks/completed/stats:
+    get:
+      summary: Get productivity stats
+      description: Get comprehensive productivity statistics
+      responses:
+        '200':
+          description: Productivity statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductivityStats'
+
+  # Uploads
+  /api/uploads:
+    post:
+      summary: Upload file
+      description: Upload a file for use in comments or tasks
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File to upload
+                project_id:
+                  type: string
+                  description: Optional project ID for workspace limits
+      responses:
+        '201':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # Templates
+  /api/templates/file:
+    get:
+      summary: Export project as CSV
+      description: Export a project as a CSV template file
+      parameters:
+        - name: project_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Project ID to export
+        - name: use_relative_dates
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Whether to use relative dates
+      responses:
+        '200':
+          description: CSV file download
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /api/templates/url:
+    get:
+      summary: Export project as URL
+      description: Get a shareable URL for a project template
+      parameters:
+        - name: project_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Project ID to export
+        - name: use_relative_dates
+          in: query
+          schema:
+            type: boolean
+            default: true
+          description: Whether to use relative dates
+      responses:
+        '200':
+          description: Template URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_name:
+                    type: string
+                  file_url:
+                    type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Todoist API token authentication
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Access forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    # Core Entities
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        full_name:
+          type: string
+        has_password:
+          type: boolean
+        verification_status:
+          type: string
+          enum: [unverified, verified, blocked, legacy]
+        mfa_enabled:
+          type: boolean
+        token:
+          type: string
+        is_premium:
+          type: boolean
+        premium_status:
+          type: string
+          enum: [not_premium, current_personal_plan, legacy_personal_plan, teams_business_member]
+        premium_until:
+          type: string
+        free_trial_expires:
+          type: string
+        has_started_a_trial:
+          type: boolean
+        joined_at:
+          type: string
+        is_deleted:
+          type: boolean
+        deleted_at:
+          type: string
+        business_account_id:
+          type: string
+        date_format:
+          type: integer
+        time_format:
+          type: integer
+        sort_order:
+          type: integer
+        theme_id:
+          type: string
+        start_day:
+          type: integer
+        weekend_start_day:
+          type: integer
+        next_week:
+          type: integer
+        auto_reminder:
+          type: integer
+        start_page:
+          type: string
+        inbox_project_id:
+          type: string
+        lang:
+          type: string
+        tz_info:
+          type: object
+          properties:
+            gmt_string:
+              type: string
+            hours:
+              type: integer
+            is_dst:
+              type: integer
+            minutes:
+              type: integer
+            timezone:
+              type: string
+        karma:
+          type: integer
+        karma_trend:
+          type: string
+        daily_goal:
+          type: integer
+        weekly_goal:
+          type: integer
+        days_off:
+          type: array
+          items:
+            type: integer
+        is_celebrations_enabled:
+          type: boolean
+        completed_count:
+          type: integer
+        completed_today:
+          type: integer
+        share_limit:
+          type: integer
+        features:
+          type: object
+        feature_identifier:
+          type: string
+        joinable_workspace:
+          type: object
+        onboarding_completed:
+          type: boolean
+        onboarding_initiated:
+          type: boolean
+        onboarding_started:
+          type: boolean
+        onboarding_level:
+          type: string
+        onboarding_persona:
+          type: string
+        onboarding_role:
+          type: string
+        onboarding_team_mode:
+          type: string
+        onboarding_use_cases:
+          type: array
+          items:
+            type: string
+        getting_started_guide_projects:
+          type: array
+          items:
+            type: string
+        activated_user:
+          type: boolean
+        has_magic_number:
+          type: boolean
+        image_id:
+          type: string
+        avatar_big:
+          type: string
+        avatar_medium:
+          type: string
+        avatar_s640:
+          type: string
+        avatar_small:
+          type: string
+        websocket_url:
+          type: string
+
+    Task:
+      type: object
+      properties:
+        user_id:
+          type: string
+        id:
+          type: string
+        project_id:
+          type: string
+        section_id:
+          type: string
+        parent_id:
+          type: string
+        added_by_uid:
+          type: string
+        assigned_by_uid:
+          type: string
+        responsible_uid:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        deadline:
+          type: object
+          properties:
+            date:
+              type: string
+            lang:
+              type: string
+        duration:
+          type: object
+          properties:
+            amount:
+              type: integer
+            unit:
+              type: string
+              enum: [minute, day]
+        checked:
+          type: boolean
+        is_deleted:
+          type: boolean
+        added_at:
+          type: string
+        completed_at:
+          type: string
+        completed_by_uid:
+          type: string
+        updated_at:
+          type: string
+        due:
+          $ref: '#/components/schemas/DueDate'
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 4
+        child_order:
+          type: integer
+        content:
+          type: string
+        description:
+          type: string
+        note_count:
+          type: integer
+        day_order:
+          type: integer
+        is_collapsed:
+          type: boolean
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        can_assign_tasks:
+          type: boolean
+        child_order:
+          type: integer
+        color:
+          type: string
+        creator_uid:
+          type: string
+        created_at:
+          type: string
+        is_archived:
+          type: boolean
+        is_deleted:
+          type: boolean
+        is_favorite:
+          type: boolean
+        is_frozen:
+          type: boolean
+        name:
+          type: string
+        updated_at:
+          type: string
+        view_style:
+          type: string
+          enum: [list, board, calendar]
+        default_order:
+          type: integer
+        description:
+          type: string
+        public_key:
+          type: string
+        access:
+          type: object
+          properties:
+            visibility:
+              type: string
+              enum: [restricted, team, public]
+            configuration:
+              type: object
+        role:
+          type: string
+        parent_id:
+          type: string
+        inbox_project:
+          type: boolean
+        is_collapsed:
+          type: boolean
+        is_shared:
+          type: boolean
+        workspace_id:
+          type: string
+        is_invite_only:
+          type: boolean
+        is_link_sharing_enabled:
+          type: boolean
+        collaborator_role_default:
+          type: string
+        status:
+          type: string
+        is_pending_default_collaborator_invites:
+          type: boolean
+
+    Section:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        project_id:
+          type: string
+        added_at:
+          type: string
+        updated_at:
+          type: string
+        archived_at:
+          type: string
+        name:
+          type: string
+        section_order:
+          type: integer
+        is_archived:
+          type: boolean
+        is_deleted:
+          type: boolean
+        is_collapsed:
+          type: boolean
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        posted_uid:
+          type: string
+        content:
+          type: string
+        file_attachment:
+          $ref: '#/components/schemas/FileAttachment'
+        uids_to_notify:
+          type: array
+          items:
+            type: string
+        is_deleted:
+          type: boolean
+        posted_at:
+          type: string
+        reactions:
+          type: object
+        item_id:
+          type: string
+        project_id:
+          type: string
+
+    Label:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+        order:
+          type: integer
+        is_favorite:
+          type: boolean
+
+    DueDate:
+      type: object
+      properties:
+        date:
+          type: string
+        timezone:
+          type: string
+        string:
+          type: string
+        lang:
+          type: string
+        is_recurring:
+          type: boolean
+
+    FileAttachment:
+      type: object
+      properties:
+        file_name:
+          type: string
+        file_size:
+          type: integer
+        file_type:
+          type: string
+        file_url:
+          type: string
+        upload_state:
+          type: string
+        tn_l:
+          type: array
+          items:
+            type: string
+        tn_m:
+          type: array
+          items:
+            type: string
+        tn_s:
+          type: array
+          items:
+            type: string
+        image:
+          type: string
+        image_width:
+          type: integer
+        image_height:
+          type: integer
+        file_duration:
+          type: integer
+
+    ActivityEvent:
+      type: object
+      properties:
+        object_type:
+          type: string
+        object_id:
+          type: string
+        v2_object_id:
+          type: string
+        event_type:
+          type: string
+        event_date:
+          type: string
+        id:
+          type: integer
+        parent_project_id:
+          type: string
+        v2_parent_project_id:
+          type: string
+        parent_item_id:
+          type: string
+        v2_parent_item_id:
+          type: string
+        initiator_id:
+          type: string
+        extra_data_id:
+          type: integer
+        extra_data:
+          type: object
+        source:
+          type: string
+
+    ProductivityStats:
+      type: object
+      properties:
+        days_items:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    completed:
+                      type: integer
+              total_completed:
+                type: integer
+        week_items:
+          type: array
+          items:
+            type: object
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+              items:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    completed:
+                      type: integer
+              total_completed:
+                type: integer
+        project_colors:
+          type: object
+          additionalProperties:
+            type: string
+        completed_count:
+          type: integer
+        karma:
+          type: integer
+        karma_trend:
+          type: string
+        karma_graph_data:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+              karma_avg:
+                type: integer
+        karma_last_update:
+          type: integer
+        karma_update_reasons:
+          type: array
+          items:
+            type: object
+            properties:
+              time:
+                type: string
+              new_karma:
+                type: integer
+              positive_karma:
+                type: integer
+              negative_karma:
+                type: integer
+              positive_karma_reasons:
+                type: array
+                items:
+                  type: integer
+              negative_karma_reasons:
+                type: array
+                items:
+                  type: integer
+        goals:
+          type: object
+          properties:
+            user:
+              type: string
+            user_id:
+              type: string
+            daily_goal:
+              type: integer
+            weekly_goal:
+              type: integer
+            ignore_days:
+              type: array
+              items:
+                type: integer
+            vacation_mode:
+              type: integer
+            karma_disabled:
+              type: integer
+            current_daily_streak:
+              type: object
+              properties:
+                count:
+                  type: integer
+                start:
+                  type: string
+                end:
+                  type: string
+            current_weekly_streak:
+              type: object
+              properties:
+                count:
+                  type: integer
+                start:
+                  type: string
+                end:
+                  type: string
+            last_daily_streak:
+              type: object
+              properties:
+                count:
+                  type: integer
+                start:
+                  type: string
+                end:
+                  type: string
+            last_weekly_streak:
+              type: object
+              properties:
+                count:
+                  type: integer
+                start:
+                  type: string
+                end:
+                  type: string
+            max_daily_streak:
+              type: object
+              properties:
+                count:
+                  type: integer
+                start:
+                  type: string
+                end:
+                  type: string
+            max_weekly_streak:
+              type: object
+              properties:
+                count:
+                  type: integer
+                start:
+                  type: string
+                end:
+                  type: string
+
+    # Request/Response Schemas
+    CreateTaskRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Task content
+        description:
+          type: string
+          description: Task description
+        project_id:
+          type: string
+          description: Parent project ID
+        section_id:
+          type: string
+          description: Parent section ID
+        parent_id:
+          type: string
+          description: Parent task ID
+        order:
+          type: integer
+          description: Task order
+        labels:
+          type: array
+          items:
+            type: string
+          description: Task labels
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: Task priority
+        assignee_id:
+          type: integer
+          description: Assignee user ID
+        due_string:
+          type: string
+          description: Due date as human-readable string
+        due_date:
+          type: string
+          description: Due date (YYYY-MM-DD)
+        due_datetime:
+          type: string
+          description: Due date and time (ISO 8601)
+        due_lang:
+          type: string
+          description: Due date language
+        duration:
+          type: integer
+          description: Task duration amount
+        duration_unit:
+          type: string
+          enum: [minute, day]
+          description: Task duration unit
+        deadline_date:
+          type: string
+          format: date
+          description: Deadline date (YYYY-MM-DD)
+      required:
+        - content
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        description:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 4
+        due_string:
+          type: string
+        due_date:
+          type: string
+        due_datetime:
+          type: string
+        due_lang:
+          type: string
+        assignee_id:
+          type: integer
+        duration:
+          type: integer
+        duration_unit:
+          type: string
+          enum: [minute, day]
+        deadline_date:
+          type: string
+          format: date
+
+    MoveTaskRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+        section_id:
+          type: string
+        parent_id:
+          type: string
+
+    CreateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parent_id:
+          type: string
+        color:
+          type: string
+        is_favorite:
+          type: boolean
+        view_style:
+          type: string
+          enum: [list, board, calendar]
+        workspace_id:
+          type: string
+      required:
+        - name
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        color:
+          type: string
+        is_favorite:
+          type: boolean
+        view_style:
+          type: string
+          enum: [list, board, calendar]
+
+    CreateCommentRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        project_id:
+          type: string
+        task_id:
+          type: string
+        attachment:
+          $ref: '#/components/schemas/FileAttachment'
+        uids_to_notify:
+          type: array
+          items:
+            type: string
+      required:
+        - content
+
+    CreateSectionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        project_id:
+          type: string
+        order:
+          type: integer
+      required:
+        - name
+        - project_id
+
+    QuickAddTaskRequest:
+      type: object
+      properties:
+        text:
+          type: string
+        note:
+          type: string
+        reminder:
+          type: string
+        auto_reminder:
+          type: boolean
+        meta:
+          type: boolean
+      required:
+        - text
+
+    UploadResponse:
+      type: object
+      properties:
+        file_url:
+          type: string
+        file_name:
+          type: string
+        file_size:
+          type: integer
+        file_type:
+          type: string
+        resource_type:
+          type: string
+        image:
+          type: string
+        image_width:
+          type: integer
+        image_height:
+          type: integer
+        upload_state:
+          type: string
+
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+        error_code:
+          type: integer
+        error_extra:
+          type: object
+        error_tag:
+          type: string
+        error_message:
+          type: string
+        http_code:
+          type: integer
+
+    # Paginated Responses
+    PaginatedTasks:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+        next_cursor:
+          type: string
+
+    PaginatedProjects:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+        next_cursor:
+          type: string
+
+    PaginatedSections:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+        next_cursor:
+          type: string
+
+    PaginatedComments:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        next_cursor:
+          type: string
+
+    PaginatedLabels:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Label'
+        next_cursor:
+          type: string

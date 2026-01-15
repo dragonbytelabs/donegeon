@@ -1,0 +1,33 @@
+{
+  "name": "@donegeon/backend",
+  "version": "0.1.0",
+  "description": "Hono-based API server for Donegeon",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "PORT=3000 bun --watch src/index.ts",
+    "build": "bun build src/index.ts",
+    "test": "bun test",
+    "lint": "eslint src --ext .ts,.tsx",
+    "type-check": "tsc --noEmit",
+    "docs": "echo \"OpenAPI docs moved to @donegeon/docs\"",
+    "docs:serve": "echo \"OpenAPI docs moved to @donegeon/docs\""
+  },
+  "dependencies": {
+    "@donegeon/app": "workspace:*",
+    "hono": "catalog:",
+    "@hono/zod-validator": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "bun-types": "catalog:",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "exports": {
+    "./todoist": "./src/todoist/index.ts",
+    "./types": "./src/types/index.ts"
+  }
+}

@@ -1,0 +1,28 @@
+.turbo/
+**/.turbo/
+.tmp
+
+# dependencies
+node_modules/
+**/node_modules/
+
+# build artifacts
+dist/
+**/dist/
+.output/
+.vinxi/
+.vite/
+**/.vite/
+*.tsbuildinfo
+
+# env
+.env
+.env.*.local
+
+# logs
+*.log
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

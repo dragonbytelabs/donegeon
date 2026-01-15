@@ -1,0 +1,23 @@
+{
+  "name": "@donegeon/app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./domain": "./src/domain/index.ts",
+    "./api": "./src/api/index.ts",
+    "./rules": "./src/rules/index.ts"
+  },
+  "scripts": {
+    "dev": "echo \"@donegeon/app: no dev server\"",
+    "build": "tsc -p tsconfig.json",
+    "test": "bun test",
+    "lint": "echo \"@donegeon/app: add lint later\"",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}
+
