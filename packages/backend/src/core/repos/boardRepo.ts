@@ -19,8 +19,8 @@ export class BoardRepo {
     const dbPath = Bun.env.DONEGEON_DB_PATH ?? "./.data/donegeon.sqlite";
     try {
       mkdirSync(dirname(dbPath), { recursive: true });
-    } catch {
-      // ignore
+    } catch (e) {
+      throw new Error(`[@donegeon/backend]: Failed to create database directory: ${(e as Error).message}`);
     }
     this.db = new Database(dbPath);
     this.initSchema();

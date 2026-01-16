@@ -47,8 +47,8 @@ let testOverrides: { seed?: number; start?: Date } | undefined;
 
 function seedVillagers(): VillagerModel[] {
   return [
-    { id: 'v1', name: 'Ada', stamina: 3, max_stamina: 3, speed: 1, level: 1, tired: false },
-    { id: 'v2', name: 'Linus', stamina: 3, max_stamina: 3, speed: 1, level: 1, tired: false }
+    { id: 'v1', name: 'Villager 1', stamina: 3, max_stamina: 3, speed: 1, level: 1, tired: false },
+    { id: 'v2', name: 'Villager 2', stamina: 3, max_stamina: 3, speed: 1, level: 1, tired: false }
   ];
 }
 
@@ -120,7 +120,8 @@ function seedProjects(): ProjectModel[] {
 }
 
 function seedRecipes(): RecipeModel[] {
-  return [{ id: 'r_make_omelet', name: 'Make Omelet', description: 'A simple recipe placeholder' }];
+  // TODO: add recipes as they are implemented
+  return [];
 }
 
 function seedQuests(): QuestModel[] {

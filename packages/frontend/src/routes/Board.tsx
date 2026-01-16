@@ -7,6 +7,7 @@ import { LegacyCard } from "../board/legacy/Card";
 import { LegacyDeckCard } from "../board/legacy/DeckCard";
 import { Notifications } from "../components/Notifications";
 import { notificationsActions } from "../state/notificationsStore";
+import { SpawnDock } from "../components/SpawnDock";
 
 // Helper functions defined outside component to avoid re-creation on every render
 function emojiForEntity(e: BoardEntityDto): string {
@@ -92,10 +93,10 @@ export default function BoardRoute() {
   const minimapData = createMemo(() => {
     const b = st().board;
     if (!b || b.entities.length === 0) return null;
-    
+
     // Cap minimap entity count for performance (render max 100 entities)
     const cappedEntities = b.entities.slice(0, 100);
-    
+
     const xs = cappedEntities.map((e) => e.x);
     const ys = cappedEntities.map((e) => e.y);
     const minX = Math.min(...xs) - 200;
@@ -405,7 +406,7 @@ export default function BoardRoute() {
     const ent = entitiesById()[id];
     if (!ent) return;
     const pt = toWorld(ev.clientX, ev.clientY);
-    
+
     // Batch all state updates together to reduce re-renders during drag
     batch(() => {
       if (grp) {
@@ -564,252 +565,253 @@ export default function BoardRoute() {
 
 
   return (
-    <main class="min-h-screen">
-      <div class="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <div class="text-xs font-semibold uppercase tracking-widest text-slate-400">Donegeon</div>
-            <h1 class="mt-2 text-3xl font-black tracking-tight">Board</h1>
-            <p class="mt-2 text-slate-300">{note()}</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <A href="/">
-              <Button class="rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
-                Dashboard
-              </Button>
-            </A>
-            <div class="mx-2 h-8 w-px bg-slate-800" />
-            <div class="flex items-center gap-2 rounded-md bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
-              <span class="font-semibold">🪙</span> {st().loot?.coin ?? 0}
-              <span class="font-semibold">📄</span> {st().loot?.paper ?? 0}
-              <span class="font-semibold">🖋️</span> {st().loot?.ink ?? 0}
-              <span class="font-semibold">⚙️</span> {st().loot?.gear ?? 0}
-            </div>
-            <Button class="rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700" onClick={() => setShowHelp(true)}>
-              ?
+    <main class="relative h-screen overflow-hidden">
+      {/* Floating header */}
+      <div class="absolute left-0 right-0 top-0 z-50 flex items-center justify-between gap-4 bg-gradient-to-b from-slate-950 via-slate-950/90 to-transparent px-6 py-4">
+        <div>
+          <div class="text-xs font-semibold uppercase tracking-widest text-slate-400">Donegeon</div>
+          <h1 class="text-2xl font-black tracking-tight">Board</h1>
+        </div>
+        <div class="flex items-center gap-2">
+          <A href="/">
+            <Button class="rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">
+              Dashboard
             </Button>
+          </A>
+          <div class="mx-2 h-8 w-px bg-slate-800" />
+          <div class="flex items-center gap-2 rounded-md bg-slate-900/50 px-3 py-2 text-xs text-slate-200">
+            <span class="font-semibold">🪙</span> {st().loot?.coin ?? 0}
+            <span class="font-semibold">📄</span> {st().loot?.paper ?? 0}
+            <span class="font-semibold">🖋️</span> {st().loot?.ink ?? 0}
+            <span class="font-semibold">⚙️</span> {st().loot?.gear ?? 0}
           </div>
+          <Button class="rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700" onClick={() => setShowHelp(true)}>
+            ?
+          </Button>
+        </div>
+      </div>
+
+      {/* Error notification */}
+      <Show when={st().error}>
+        <div class="absolute left-6 right-6 top-24 z-50 rounded-xl border border-red-900/50 bg-red-950/90 p-4 text-sm text-red-200 backdrop-blur-sm">{st().error}</div>
+      </Show>
+
+      {/* Full screen board */}
+      <div
+        ref={boardEl}
+        class="relative h-screen w-full overflow-hidden bg-slate-950"
+        onContextMenu={(e) => preventContextMenu(e as unknown as MouseEvent)}
+        onPointerDown={(e) => onPointerDownBoard(e as unknown as PointerEvent)}
+        onWheel={(e) => onWheelBoard(e as unknown as WheelEvent)}
+        onPointerMove={onPointerMoveBoard}
+        onPointerUp={onPointerUpBoard}
+      >
+        {/* background layer (clipped) */}
+        <div
+          class="absolute inset-0 overflow-hidden"
+          style={{
+            "background-image":
+              "radial-gradient(900px 600px at 30% 20%, rgba(130, 255, 200, 0.10), rgba(0, 0, 0, 0) 60%), radial-gradient(800px 500px at 70% 70%, rgba(120, 160, 255, 0.10), rgba(0, 0, 0, 0) 60%), linear-gradient(180deg, rgba(18, 18, 22, 1), rgba(10, 10, 14, 1)), linear-gradient(to right, rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)",
+            "background-size": "auto, auto, auto, 100px 100px, 100px 100px",
+            "background-position": `0 0, 0 0, 0 0, ${bgPos()}, ${bgPos()}`
+          }}
+        />
+        {/* left sidebar */}
+        <div class="absolute left-4 top-4 z-20 w-[280px] rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-slate-200">
+          <div class="flex items-center justify-between">
+            <div class="text-xs font-extrabold tracking-widest text-amber-200">{leftTab() === "quests" ? "QUESTS" : "TODAY"}</div>
+            <div class="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/50 p-1 text-[11px]">
+              <button
+                class={["rounded-md px-2 py-1 font-extrabold", leftTab() === "quests" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-900"].join(" ")}
+                onClick={() => setLeftTab("quests")}
+              >
+                Quests
+              </button>
+              <button
+                class={["rounded-md px-2 py-1 font-extrabold", leftTab() === "today" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-900"].join(" ")}
+                onClick={() => setLeftTab("today")}
+              >
+                Today
+              </button>
+            </div>
+          </div>
+
+          <Show when={leftTab() === "quests"}>
+            <div class="mt-3 space-y-2">
+              <For each={st().questsAll.filter((q) => q.type !== "daily")}>
+                {(q) => (
+                  <div class="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <div class="text-sm font-extrabold text-slate-100">{q.title}</div>
+                        <div class="mt-1 text-xs text-slate-300">{q.description}</div>
+                      </div>
+                      <Show when={q.status === "complete"}>
+                        <button
+                          class="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-black text-white hover:bg-emerald-500"
+                          onClick={() => void store.actions.claimQuest(q.id)}
+                        >
+                          Claim
+                        </button>
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </For>
+
+              <Show when={(st().questsAll.filter((q) => q.type !== "daily")?.length ?? 0) === 0}>
+                <div class="text-sm text-slate-400">No active quests.</div>
+              </Show>
+
+              <div class="mt-3 border-t border-slate-800 pt-3">
+                <div class="text-xs font-bold tracking-widest text-slate-400">DAILY</div>
+                <For each={st().questsDaily}>
+                  {(q) => (
+                    <div class="mt-2 text-sm text-slate-200">
+                      {q.title}
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+
+          <Show when={leftTab() === "today"}>
+            <div class="mt-3 rounded-md bg-emerald-950/40 px-3 py-2 text-sm">
+              Danger: <span class="font-semibold">{st().today?.danger_level ?? "—"}</span>
+            </div>
+            <div class="mt-3 text-sm text-slate-300">
+              Villagers: {st().today?.villagers_free ?? 0} free / {st().today?.villagers_total ?? 0} total
+            </div>
+            <div class="mt-1 text-sm text-slate-300">
+              Tasks: {st().today?.tasks_live ?? 0} live • {st().today?.tasks_completed_today ?? 0} completed today
+            </div>
+            <div class="mt-4 border-t border-slate-800 pt-3">
+              <div class="text-xs font-bold tracking-widest text-slate-400">VILLAGER STAMINA</div>
+              <For each={st().villagers}>
+                {(v) => (
+                  <div class="mt-2 text-sm text-slate-200">
+                    {v.name}: {v.stamina}/{v.max_stamina}
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
 
-        <Show when={st().error}>
-          <div class="rounded-xl border border-red-900/50 bg-red-950/30 p-4 text-sm text-red-200">{st().error}</div>
+        <Show when={st().loading}>
+          <div class="absolute inset-0 grid place-items-center text-slate-400">Loading board…</div>
         </Show>
 
-        <div
-          ref={boardEl}
-          class="relative h-[72vh] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-950/40"
-          onContextMenu={(e) => preventContextMenu(e as unknown as MouseEvent)}
-          onPointerDown={(e) => onPointerDownBoard(e as unknown as PointerEvent)}
-          onWheel={(e) => onWheelBoard(e as unknown as WheelEvent)}
-          onPointerMove={onPointerMoveBoard}
-          onPointerUp={onPointerUpBoard}
-        >
-          {/* background layer (clipped) */}
-          <div
-            class="absolute inset-0 overflow-hidden rounded-xl"
-            style={{
-              "background-image":
-                "radial-gradient(900px 600px at 30% 20%, rgba(130, 255, 200, 0.10), rgba(0, 0, 0, 0) 60%), radial-gradient(800px 500px at 70% 70%, rgba(120, 160, 255, 0.10), rgba(0, 0, 0, 0) 60%), linear-gradient(180deg, rgba(18, 18, 22, 1), rgba(10, 10, 14, 1)), linear-gradient(to right, rgba(148,163,184,0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.08) 1px, transparent 1px)",
-              "background-size": "auto, auto, auto, 100px 100px, 100px 100px",
-              "background-position": `0 0, 0 0, 0 0, ${bgPos()}, ${bgPos()}`
-            }}
-          />
-          {/* left sidebar */}
-          <div class="absolute left-4 top-4 z-20 w-[280px] rounded-xl border border-slate-800 bg-slate-950/60 p-4 text-slate-200">
-            <div class="flex items-center justify-between">
-              <div class="text-xs font-extrabold tracking-widest text-amber-200">{leftTab() === "quests" ? "QUESTS" : "TODAY"}</div>
-              <div class="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-950/50 p-1 text-[11px]">
-                <button
-                  class={["rounded-md px-2 py-1 font-extrabold", leftTab() === "quests" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-900"].join(" ")}
-                  onClick={() => setLeftTab("quests")}
-                >
-                  Quests
-                </button>
-                <button
-                  class={["rounded-md px-2 py-1 font-extrabold", leftTab() === "today" ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-900"].join(" ")}
-                  onClick={() => setLeftTab("today")}
-                >
-                  Today
-                </button>
+        {/* pan/zoom hint */}
+        <div class="absolute right-4 top-4 z-30 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200">
+          Right-drag to pan • Wheel to zoom
+        </div>
+
+        {/* minimap (v0.6) */}
+        <Show when={minimapData()}>
+          {(mm) => (
+            <div
+              class="absolute bottom-4 left-4 z-40 rounded-xl border border-slate-800 bg-slate-950/90 p-3 text-xs text-slate-200 backdrop-blur-sm"
+              style={{ width: `${mm().mmW + 16}px` }}
+            >
+              <div class="mb-2 text-[11px] font-extrabold tracking-widest text-slate-300">MINIMAP</div>
+              <div
+                class="relative overflow-hidden rounded-lg border border-slate-800 bg-black/20"
+                style={{ width: `${mm().mmW}px`, height: `${mm().mmH}px` }}
+                onClick={(e) => {
+                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+                  const mx = e.clientX - rect.left;
+                  const my = e.clientY - rect.top;
+                  const wx = mm().minX + mx / mm().scale;
+                  const wy = mm().minY + my / mm().scale;
+                  // center camera on clicked world point
+                  store.actions.setCamera({
+                    panX: boardSize().w / 2 - wx * zoom(),
+                    panY: boardSize().h / 2 - wy * zoom(),
+                    zoom: zoom()
+                  });
+                }}
+                title="Click to pan"
+              >
+                <For each={mm().cappedEntities}>
+                  {(e) => {
+                    const x = (e.x - mm().minX) * mm().scale;
+                    const y = (e.y - mm().minY) * mm().scale;
+                    const color =
+                      e.kind === "deck"
+                        ? "bg-indigo-300"
+                        : e.card_type === "task"
+                          ? "bg-sky-300"
+                          : e.card_type === "villager"
+                            ? "bg-emerald-300"
+                            : e.card_type === "loot"
+                              ? "bg-amber-300"
+                              : e.card_type === "modifier"
+                                ? "bg-violet-300"
+                                : "bg-slate-300";
+                    const size = e.kind === "deck" ? 2.5 : 1.5;
+                    return <div class={`absolute rounded-full ${color}`} style={{ left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` }} />;
+                  }}
+                </For>
+
+                {/* viewport rectangle */}
+                <div
+                  class="absolute rounded border border-amber-300/80 bg-amber-300/10"
+                  style={{
+                    left: `${(mm().view.left - mm().minX) * mm().scale}px`,
+                    top: `${(mm().view.top - mm().minY) * mm().scale}px`,
+                    width: `${(mm().view.right - mm().view.left) * mm().scale}px`,
+                    height: `${(mm().view.bottom - mm().view.top) * mm().scale}px`
+                  }}
+                />
               </div>
             </div>
+          )}
+        </Show>
 
-            <Show when={leftTab() === "quests"}>
-              <div class="mt-3 space-y-2">
-                <For each={st().questsAll.filter((q) => q.type !== "daily")}>
-                  {(q) => (
-                    <div class="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <div class="flex items-start justify-between gap-2">
-                        <div>
-                          <div class="text-sm font-extrabold text-slate-100">{q.title}</div>
-                          <div class="mt-1 text-xs text-slate-300">{q.description}</div>
-                        </div>
-                        <Show when={q.status === "complete"}>
-                          <button
-                            class="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-black text-white hover:bg-emerald-500"
-                            onClick={() => void store.actions.claimQuest(q.id)}
-                          >
-                            Claim
-                          </button>
-                        </Show>
-                      </div>
-                    </div>
-                  )}
-                </For>
+        {/* world layer (camera transform) */}
+        <div class="absolute inset-0 origin-top-left" style={{ transform: transform() }}>
+          <For each={rootEntities()}>
+            {(e) => {
+              const x = e.x;
+              const y = e.y;
+              const stackId = e.stack_id;
+              const stack = stackId ? stacksById()[stackId] : undefined;
+              const attached = stack ? [...stack.attached_ids] : [];
+              const taskId = stack?.task_id;
 
-                <Show when={(st().questsAll.filter((q) => q.type !== "daily")?.length ?? 0) === 0}>
-                  <div class="text-sm text-slate-400">No active quests.</div>
-                </Show>
+              // Build a render order: task first (front), then attached behind.
+              const renderIds: string[] = [];
+              if (taskId) renderIds.push(taskId);
+              renderIds.push(...attached);
+              const renderEntities = renderIds.length ? renderIds.map((id) => entitiesById()[id]).filter(Boolean) : [e];
 
-                <div class="mt-3 border-t border-slate-800 pt-3">
-                  <div class="text-xs font-bold tracking-widest text-slate-400">DAILY</div>
-                  <For each={st().questsDaily}>
-                    {(q) => (
-                      <div class="mt-2 text-sm text-slate-200">
-                        {q.title}
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </div>
-            </Show>
-
-            <Show when={leftTab() === "today"}>
-              <div class="mt-3 rounded-md bg-emerald-950/40 px-3 py-2 text-sm">
-                Danger: <span class="font-semibold">{st().today?.danger_level ?? "—"}</span>
-              </div>
-              <div class="mt-3 text-sm text-slate-300">
-                Villagers: {st().today?.villagers_free ?? 0} free / {st().today?.villagers_total ?? 0} total
-              </div>
-              <div class="mt-1 text-sm text-slate-300">
-                Tasks: {st().today?.tasks_live ?? 0} live • {st().today?.tasks_completed_today ?? 0} completed today
-              </div>
-              <div class="mt-4 border-t border-slate-800 pt-3">
-                <div class="text-xs font-bold tracking-widest text-slate-400">VILLAGER STAMINA</div>
-                <For each={st().villagers}>
-                  {(v) => (
-                    <div class="mt-2 text-sm text-slate-200">
-                      {v.name}: {v.stamina}/{v.max_stamina}
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
-
-          <Show when={st().loading}>
-            <div class="absolute inset-0 grid place-items-center text-slate-400">Loading board…</div>
-          </Show>
-
-          {/* pan/zoom hint */}
-          <div class="absolute right-4 top-4 z-30 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-200">
-            Right-drag to pan • Wheel to zoom
-          </div>
-
-          {/* minimap (v0.6) */}
-          <Show when={minimapData()}>
-            {(mm) => (
-              <div
-                class="absolute bottom-4 left-4 z-30 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-200"
-                style={{ width: `${mm().mmW + 16}px` }}
-              >
-                <div class="mb-2 text-[11px] font-extrabold tracking-widest text-slate-300">MINIMAP</div>
+              return (
                 <div
-                  class="relative overflow-hidden rounded-lg border border-slate-800 bg-black/20"
-                  style={{ width: `${mm().mmW}px`, height: `${mm().mmH}px` }}
-                  onClick={(e) => {
-                    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                    const mx = e.clientX - rect.left;
-                    const my = e.clientY - rect.top;
-                    const wx = mm().minX + mx / mm().scale;
-                    const wy = mm().minY + my / mm().scale;
-                    // center camera on clicked world point
-                    store.actions.setCamera({
-                      panX: boardSize().w / 2 - wx * zoom(),
-                      panY: boardSize().h / 2 - wy * zoom(),
-                      zoom: zoom()
-                    });
-                  }}
-                  title="Click to pan"
+                  class={[
+                    "absolute",
+                    selectedSet().has(e.id) ? "outline outline-2 outline-amber-300/80 rounded-xl" : "",
+                    hoverStack()?.id === e.id
+                      ? hoverStack()?.allowed
+                        ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-slate-950/40 rounded-xl"
+                        : "ring-2 ring-rose-300 ring-offset-2 ring-offset-slate-950/40 rounded-xl"
+                      : ""
+                  ].join(" ")}
+                  style={{ transform: `translate(${x}px, ${y}px)` }}
                 >
-                  <For each={mm().cappedEntities}>
-                    {(e) => {
-                      const x = (e.x - mm().minX) * mm().scale;
-                      const y = (e.y - mm().minY) * mm().scale;
-                      const color =
-                        e.kind === "deck"
-                          ? "bg-indigo-300"
-                          : e.card_type === "task"
-                            ? "bg-sky-300"
-                            : e.card_type === "villager"
-                              ? "bg-emerald-300"
-                              : e.card_type === "loot"
-                                ? "bg-amber-300"
-                                : e.card_type === "modifier"
-                                  ? "bg-violet-300"
-                                  : "bg-slate-300";
-                      const size = e.kind === "deck" ? 2.5 : 1.5;
-                      return <div class={`absolute rounded-full ${color}`} style={{ left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` }} />;
-                    }}
-                  </For>
-
-                  {/* viewport rectangle */}
-                  <div
-                    class="absolute rounded border border-amber-300/80 bg-amber-300/10"
-                    style={{
-                      left: `${(mm().view.left - mm().minX) * mm().scale}px`,
-                      top: `${(mm().view.top - mm().minY) * mm().scale}px`,
-                      width: `${(mm().view.right - mm().view.left) * mm().scale}px`,
-                      height: `${(mm().view.bottom - mm().view.top) * mm().scale}px`
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-          </Show>
-
-          {/* world layer (camera transform) */}
-          <div class="absolute inset-0 origin-top-left" style={{ transform: transform() }}>
-            <For each={rootEntities()}>
-              {(e) => {
-                const x = e.x;
-                const y = e.y;
-                const stackId = e.stack_id;
-                const stack = stackId ? stacksById()[stackId] : undefined;
-                const attached = stack ? [...stack.attached_ids] : [];
-                const taskId = stack?.task_id;
-
-                // Build a render order: task first (front), then attached behind.
-                const renderIds: string[] = [];
-                if (taskId) renderIds.push(taskId);
-                renderIds.push(...attached);
-                const renderEntities = renderIds.length ? renderIds.map((id) => entitiesById()[id]).filter(Boolean) : [e];
-
-                return (
-                  <div
-                    class={[
-                      "absolute",
-                      selectedSet().has(e.id) ? "outline outline-2 outline-amber-300/80 rounded-xl" : "",
-                      hoverStack()?.id === e.id
-                        ? hoverStack()?.allowed
-                          ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-slate-950/40 rounded-xl"
-                          : "ring-2 ring-rose-300 ring-offset-2 ring-offset-slate-950/40 rounded-xl"
-                        : ""
-                    ].join(" ")}
-                    style={{ transform: `translate(${x}px, ${y}px)` }}
-                  >
-                    <div class="relative">
-                      <For each={renderEntities}>
-                        {(ce, idx) => (
-                          <div class="absolute" style={{ transform: `translate(0px, ${idx() * 22}px)` }}>
-                            <div onPointerDown={(ev) => onPointerDownEntity(ev as unknown as PointerEvent, ce.id)}>
-                              <div
-                                style={{
-                                  transform: `translate(${st().animOffsets[ce.id]?.dx ?? 0}px, ${st().animOffsets[ce.id]?.dy ?? 0}px)`,
-                                  transition: "transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1)"
-                                }}
-                              >
-                                <LegacyCard
+                  <div class="relative">
+                    <For each={renderEntities}>
+                      {(ce, idx) => (
+                        <div class="absolute" style={{ transform: `translate(0px, ${idx() * 22}px)` }}>
+                          <div onPointerDown={(ev) => onPointerDownEntity(ev as unknown as PointerEvent, ce.id)}>
+                            <div
+                              style={{
+                                transform: `translate(${st().animOffsets[ce.id]?.dx ?? 0}px, ${st().animOffsets[ce.id]?.dy ?? 0}px)`,
+                                transition: "transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1)"
+                              }}
+                            >
+                              <LegacyCard
                                 title={titleForEntity(ce)}
                                 emoji={emojiForEntity(ce)}
                                 name={nameForEntity(ce)}
@@ -833,102 +835,53 @@ export default function BoardRoute() {
                                 collapsed={idx() > 0}
                                 showHandle={idx() === 0 && ce.kind === "card" && ce.card_type === "task" && !!stackId}
                                 onUnstack={stackId ? () => void unstack(stackId) : undefined}
-                                onInfo={() => {}}
+                                onInfo={() => { }}
                                 onDone={undefined}
-                                />
-                              </div>
+                              />
                             </div>
                           </div>
-                        )}
-                      </For>
+                        </div>
+                      )}
+                    </For>
 
-                      <Show when={e.kind === "deck"}>
-                        <button
-                          class="absolute inset-0 h-[160px] w-[120px] rounded-xl"
-                          onClick={() => void openDeck(e.id)}
-                          title="Open deck"
-                        />
-                      </Show>
-                    </div>
+                    <Show when={e.kind === "deck"}>
+                      <button
+                        class="absolute inset-0 h-[160px] w-[120px] rounded-xl"
+                        onClick={() => void openDeck(e.id)}
+                        title="Open deck"
+                      />
+                    </Show>
                   </div>
-                );
-              }}
-            </For>
-          </div>
-
-          <Show when={showHelp()}>
-            <div class="absolute inset-0 z-50 bg-black/60" onClick={() => setShowHelp(false)}>
-              <div class="absolute bottom-6 right-6 max-h-[70vh] w-[360px] overflow-auto rounded-xl border border-slate-800 bg-slate-950 p-4 text-slate-200" onClick={(e) => e.stopPropagation()}>
-                <div class="text-sm font-extrabold">Donegeon Rules (v0.3)</div>
-                <div class="mt-3 text-sm text-slate-300">
-                  - Drag cards around. Drop loot onto the Collect deck.\n                  - Click First Day to spawn a deck, then click the spawned deck to open it.\n                  - Stack compatible cards by dropping onto another card.\n                  - Use the X on task stacks to unstack.\n                </div>
-                <div class="mt-4">
-                  <Button class="w-full rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700" onClick={() => setShowHelp(false)}>
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Show>
-        </div>
-
-        {/* Dock OUTSIDE play area */}
-        <div class="flex items-end justify-center gap-4 rounded-xl border border-slate-800 bg-slate-950/40 px-4 py-4">
-          <div ref={collectDeckEl} class={hoverDock() === "collect" ? "rounded-2xl ring-2 ring-emerald-300" : ""}>
-            <LegacyDeckCard size="dock" variant="collect" title="Collect" subtitle="Drop Loot" />
-          </div>
-          <div ref={sellDeckEl} class={hoverDock() === "sell" ? "rounded-2xl ring-2 ring-slate-200" : ""}>
-            <LegacyDeckCard size="dock" variant="sell" title="Sell" subtitle="+🪙" />
-          </div>
-          <div ref={trashDeckEl} class={hoverDock() === "trash" ? "rounded-2xl ring-2 ring-rose-300" : ""}>
-            <LegacyDeckCard size="dock" variant="sell" title="Trash" subtitle="🗑️" />
-          </div>
-          <For each={dockDecks()}>
-            {(d) => {
-              const isLocked = d.status === "locked";
-              const req = d.unlock_required_tasks ?? 0;
-              const processed = d.world_tasks_processed ?? 0;
-              const progressPct = req > 0 ? Math.min(100, Math.round((processed / req) * 100)) : 100;
-              const isFree = d.type === "first_day" && d.times_opened < 5;
-              const title = d.type === "organization" ? "Modifiers" : d.name.replace(" Deck", "");
-              const footer = isFree ? "FREE" : `${d.base_cost} 🪙`;
-
-              return (
-                <div class="relative">
-                  <LegacyDeckCard
-                    size="dock"
-                    variant={d.type === "first_day" ? "firstDay" : "firstDay"}
-                    title={title}
-                    footer={footer}
-                    onClick={() => {
-                      if (isLocked) {
-                        notificationsActions.pushInfo("Locked", `${processed}/${req} tasks processed`);
-                        return;
-                      }
-                      void store.actions.spawnDeck(d.id);
-                    }}
-                  />
-                  <Show when={isLocked}>
-                    <div class="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
-                      <div class="absolute inset-0 bg-black/40" />
-                      <div class="absolute left-2 right-2 top-2 rounded-xl bg-black/40 px-2 py-1 text-center text-[11px] font-black text-white">
-                        Locked
-                      </div>
-                      <div class="absolute bottom-2 left-2 right-2 rounded-xl bg-black/40 px-2 py-2">
-                        <div class="h-2 w-full overflow-hidden rounded-full bg-white/15">
-                          <div class="h-full bg-sky-400" style={{ width: `${progressPct}%` }} />
-                        </div>
-                        <div class="mt-1 text-center text-[10px] font-bold text-white/90">
-                          {processed}/{req} tasks
-                        </div>
-                      </div>
-                    </div>
-                  </Show>
                 </div>
               );
             }}
           </For>
         </div>
+
+        <Show when={showHelp()}>
+          <div class="absolute inset-0 z-50 bg-black/60" onClick={() => setShowHelp(false)}>
+            <div class="absolute bottom-6 right-6 max-h-[70vh] w-[360px] overflow-auto rounded-xl border border-slate-800 bg-slate-950 p-4 text-slate-200" onClick={(e) => e.stopPropagation()}>
+              <div class="text-sm font-extrabold">Donegeon Rules (v0.3)</div>
+              <div class="mt-3 text-sm text-slate-300">
+                - Drag cards around. Drop loot onto the Collect deck.\n                  - Click First Day to spawn a deck, then click the spawned deck to open it.\n                  - Stack compatible cards by dropping onto another card.\n                  - Use the X on task stacks to unstack.\n                </div>
+              <div class="mt-4">
+                <Button class="w-full rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700" onClick={() => setShowHelp(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Show>
+
+        {/* SpawnDock inside play area */}
+        <SpawnDock
+          collectDeckRef={(el) => collectDeckEl = el}
+          sellDeckRef={(el) => sellDeckEl = el}
+          trashDeckRef={(el) => trashDeckEl = el}
+          hoverDock={hoverDock()}
+          dockDecks={dockDecks()}
+          onSpawnDeck={(deckId) => void store.actions.spawnDeck(deckId)}
+        />
       </div>
 
       <Notifications />

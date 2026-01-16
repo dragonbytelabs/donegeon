@@ -1,7 +1,7 @@
 // General types for the backend package
 
 // Re-export task API adapter types for convenience
-export * from '../todoist/types.js';
+export * from '../tasks/types.js';
 
 // Add any additional general types here
 export interface ApiResponse<T = any> {

@@ -1,6 +1,7 @@
 import type { TaskRepo } from './repos/taskRepo.js';
 import type { QuestRepo } from './repos/questRepo.js';
 import type { BoardEventDto } from '@donegeon/app/api';
+import type { QuestStatus } from './types.js';
 
 // Minimal quest service: keeps quests roughly in sync with task actions.
 export class QuestService {
@@ -16,11 +17,10 @@ export class QuestService {
     const existing = this.questRepo.get('q_daily_create_task');
     const tasks = this.taskRepo.list();
     
-    if (existing && existing.status === 'active') {
-      const prevCompleted = existing.status === 'complete';
+    if (existing && existing.status === "active") {
       const shouldBeComplete = tasks.length > 0;
       
-      if (!prevCompleted && shouldBeComplete) {
+      if (shouldBeComplete) {
         // Quest just became completable
         existing.status = 'complete';
         this.questRepo.update(existing);

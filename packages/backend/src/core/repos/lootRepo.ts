@@ -21,7 +21,7 @@ export class LootRepo {
 
   add(drops: LootDropModel[]) {
     for (const d of drops) {
-      this.inv[d.type] = (this.inv[d.type] ?? 0) + d.amount;
+      this.addOne(d.type, d.amount);
     }
   }
 
