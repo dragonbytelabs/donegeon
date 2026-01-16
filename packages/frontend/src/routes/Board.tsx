@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, batch } from "solid-js";
 import { A } from "@solidjs/router";
 import { Button } from "@kobalte/core/button";
 import type { BoardEntityDto, BoardStateDto, StackDto } from "@donegeon/app/api";
@@ -8,16 +8,65 @@ import { LegacyDeckCard } from "../board/legacy/DeckCard";
 import { Notifications } from "../components/Notifications";
 import { notificationsActions } from "../state/notificationsStore";
 
+// Helper functions defined outside component to avoid re-creation on every render
+function emojiForEntity(e: BoardEntityDto): string {
+  if (e.kind === "deck") return "📦";
+  if (e.card_type === "task") return "📋";
+  if (e.card_type === "villager") return "🧑‍🌾";
+  if (e.card_type === "loot") {
+    const t = e.payload?.loot_type ?? e.subtype;
+    if (t === "coin") return "🪙";
+    if (t === "paper") return "📄";
+    if (t === "ink") return "🖋️";
+    if (t === "gear") return "⚙️";
+    if (t === "parts") return "📦";
+    return "🎁";
+  }
+  if (e.card_type === "resource") return "🍄";
+  if (e.card_type === "modifier") return "⏱️";
+  if (e.card_type === "food") return "🍎";
+  return "🃏";
+}
+
+function titleForEntity(e: BoardEntityDto): string {
+  if (e.kind === "deck") return "DECK";
+  return e.card_type.toUpperCase();
+}
+
+function nameForEntity(e: BoardEntityDto): string {
+  if (e.kind === "deck") return e.deck_id;
+  if (e.card_type === "loot") return String(e.payload?.loot_type ?? e.subtype ?? "loot");
+  if (e.card_type === "resource") return String(e.payload?.resource_card?.resource_type ?? e.subtype ?? "resource");
+  if (e.card_type === "modifier") return String(e.payload?.modifier_card?.type ?? e.subtype ?? "modifier");
+  if (e.card_type === "task") return String(e.payload?.task?.name ?? e.payload?.name ?? "task");
+  if (e.card_type === "villager") return String(e.payload?.name ?? "villager");
+  return e.card_type;
+}
+
+function subtitleForEntity(e: BoardEntityDto): string | undefined {
+  if (e.kind === "deck") return "Click to open";
+  if (e.card_type === "villager") return `${e.payload?.stamina ?? "?"}/${e.payload?.max_stamina ?? "?"} stamina`;
+  if (e.card_type === "loot") return `x${e.payload?.loot_amount ?? 1}`;
+  return undefined;
+}
+
 export default function BoardRoute() {
   const [note] = createSignal("Board v0.4: camera + dock (in progress)");
   const store = createBoardStore();
   const st = () => store.state;
   const [showHelp, setShowHelp] = createSignal(false);
   const [leftTab, setLeftTab] = createSignal<"quests" | "today">("quests");
+  const [nowTick, setNowTick] = createSignal(0);
+
+  createEffect(() => {
+    const t = setInterval(() => setNowTick((n) => n + 1), 200);
+    onCleanup(() => clearInterval(t));
+  });
 
   let boardEl!: HTMLDivElement;
   let collectDeckEl!: HTMLDivElement;
   let sellDeckEl!: HTMLDivElement;
+  let trashDeckEl!: HTMLDivElement;
 
   const CARD_W = 120;
   const CARD_H = 160;
@@ -43,8 +92,12 @@ export default function BoardRoute() {
   const minimapData = createMemo(() => {
     const b = st().board;
     if (!b || b.entities.length === 0) return null;
-    const xs = b.entities.map((e) => e.x);
-    const ys = b.entities.map((e) => e.y);
+    
+    // Cap minimap entity count for performance (render max 100 entities)
+    const cappedEntities = b.entities.slice(0, 100);
+    
+    const xs = cappedEntities.map((e) => e.x);
+    const ys = cappedEntities.map((e) => e.y);
     const minX = Math.min(...xs) - 200;
     const maxX = Math.max(...xs) + 200;
     const minY = Math.min(...ys) - 200;
@@ -62,7 +115,7 @@ export default function BoardRoute() {
       bottom: (boardSize().h - pan().y) / zoom()
     };
 
-    return { minX, minY, worldW, worldH, mmW, mmH, scale, view };
+    return { minX, minY, worldW, worldH, mmW, mmH, scale, view, cappedEntities };
   });
 
   function clamp(n: number, a: number, b: number) {
@@ -78,6 +131,39 @@ export default function BoardRoute() {
 
   createEffect(() => {
     void store.actions.load();
+  });
+
+  // Hotkeys (v0.7)
+  createEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || (el as any)?.isContentEditable) return;
+
+      if (e.key === "?") {
+        setShowHelp(true);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "Escape") {
+        setSelectedIds([]);
+        setShowHelp(false);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "0") {
+        store.actions.setCamera({ panX: pan().x, panY: pan().y, zoom: 1 });
+        e.preventDefault();
+        return;
+      }
+      if (e.key.toLowerCase() === "c") {
+        store.actions.setCamera({ panX: boardSize().w / 2, panY: boardSize().h / 2, zoom: zoom() });
+        e.preventDefault();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
   });
 
   const entitiesById = createMemo(() => {
@@ -160,9 +246,18 @@ export default function BoardRoute() {
   const [draggingId, setDraggingId] = createSignal<string | null>(null);
   const [dragStart, setDragStart] = createSignal<{ x: number; y: number } | null>(null);
   const [dragOffset, setDragOffset] = createSignal<{ x: number; y: number } | null>(null);
+  const [dragGroup, setDragGroup] = createSignal<{
+    ids: string[];
+    startPt: { x: number; y: number };
+    startPos: Record<string, { x: number; y: number }>;
+  } | null>(null);
+
+  const [selectedIds, setSelectedIds] = createSignal<string[]>([]);
+  const selectedSet = createMemo(() => new Set(selectedIds()));
   const [isPanning, setIsPanning] = createSignal(false);
   const [panPointer, setPanPointer] = createSignal<{ id: number; startX: number; startY: number; panX: number; panY: number } | null>(null);
-  const [hoverDock, setHoverDock] = createSignal<"collect" | "sell" | null>(null);
+  const [hoverDock, setHoverDock] = createSignal<"collect" | "sell" | "trash" | null>(null);
+  const [hoverStack, setHoverStack] = createSignal<{ id: string; allowed: boolean } | null>(null);
   const [panVel, setPanVel] = createSignal<{ vx: number; vy: number; t: number } | null>(null);
   let inertiaRaf: number | null = null;
 
@@ -178,6 +273,14 @@ export default function BoardRoute() {
       }
       (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
       ev.preventDefault();
+      return;
+    }
+    // Left-click empty area clears selection
+    if (ev.button === 0) {
+      const target = ev.target as HTMLElement | null;
+      if (target && boardEl && target === boardEl) {
+        setSelectedIds([]);
+      }
     }
   }
 
@@ -249,10 +352,37 @@ export default function BoardRoute() {
     if (!b) return;
     const ent = entitiesById()[entityId];
     if (!ent) return;
+    // Selection (v0.7): shift toggles, plain click selects single
+    if (ev.shiftKey) {
+      setSelectedIds((prev) => {
+        const set = new Set(prev);
+        if (set.has(entityId)) set.delete(entityId);
+        else set.add(entityId);
+        return [...set];
+      });
+    } else {
+      if (!selectedSet().has(entityId) || selectedIds().length > 1) setSelectedIds([entityId]);
+    }
+
     const pt = toWorld(ev.clientX, ev.clientY);
-    setDraggingId(entityId);
-    setDragStart({ x: ent.x, y: ent.y });
-    setDragOffset({ x: pt.x - ent.x, y: pt.y - ent.y });
+    const ids = selectedSet().has(entityId) ? selectedIds() : [entityId];
+    if (ids.length > 1) {
+      const startPos: Record<string, { x: number; y: number }> = {};
+      for (const id of ids) {
+        const e = entitiesById()[id];
+        if (!e) continue;
+        startPos[id] = { x: e.x, y: e.y };
+      }
+      setDragGroup({ ids, startPt: pt, startPos });
+      setDraggingId(entityId);
+      setDragStart({ x: ent.x, y: ent.y });
+      setDragOffset(null);
+    } else {
+      setDragGroup(null);
+      setDraggingId(entityId);
+      setDragStart({ x: ent.x, y: ent.y });
+      setDragOffset({ x: pt.x - ent.x, y: pt.y - ent.y });
+    }
     // Capture on the board so drag/drop continues even when cursor leaves the play area (dock is outside).
     boardEl.setPointerCapture(ev.pointerId);
     ev.preventDefault();
@@ -264,8 +394,9 @@ export default function BoardRoute() {
       return;
     }
     const id = draggingId();
+    const grp = dragGroup();
     const off = dragOffset();
-    if (!id || !off) {
+    if (!id || (!off && !grp)) {
       setHoverDock(null);
       return;
     }
@@ -274,23 +405,57 @@ export default function BoardRoute() {
     const ent = entitiesById()[id];
     if (!ent) return;
     const pt = toWorld(ev.clientX, ev.clientY);
-    const x = pt.x - off.x;
-    const y = pt.y - off.y;
-    store.actions.optimisticMove(id, x, y);
+    
+    // Batch all state updates together to reduce re-renders during drag
+    batch(() => {
+      if (grp) {
+        const dx = pt.x - grp.startPt.x;
+        const dy = pt.y - grp.startPt.y;
+        for (const gid of grp.ids) {
+          const sp = grp.startPos[gid];
+          if (!sp) continue;
+          store.actions.optimisticMove(gid, sp.x + dx, sp.y + dy);
+        }
+        // group drag disables stack hover
+        setHoverStack(null);
+      } else if (off) {
+        const x = pt.x - off.x;
+        const y = pt.y - off.y;
+        store.actions.optimisticMove(id, x, y);
 
-    // Dock hover (client-space): highlight Collect/Sell slots when cursor is over them.
-    const canCollect = ent.kind === "card" && ent.card_type === "loot";
-    const canSell = ent.kind === "card" && ent.card_type !== "villager";
-    let nextHover: "collect" | "sell" | null = null;
-    if (canCollect && collectDeckEl) {
-      const r = collectDeckEl.getBoundingClientRect();
-      if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) nextHover = "collect";
-    }
-    if (!nextHover && canSell && sellDeckEl) {
-      const r = sellDeckEl.getBoundingClientRect();
-      if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) nextHover = "sell";
-    }
-    setHoverDock(nextHover);
+        // Stack hover (world-space): show preview when near another compatible card.
+        const candidates = (b.entities ?? []).filter((e) => e.id !== id && e.kind === "card");
+        const near = candidates.find((e) => Math.hypot(e.x - x, e.y - y) < 46);
+        if (near) {
+          const sameType = (ent as any).card_type === (near as any).card_type;
+          const aSub = (ent as any).subtype ?? "";
+          const bSub = (near as any).subtype ?? "";
+          const subtypeOk = (ent as any).card_type === "food" || (ent as any).card_type === "resource" ? aSub !== "" && aSub === bSub : true;
+          setHoverStack({ id: near.id, allowed: sameType && subtypeOk });
+        } else {
+          setHoverStack(null);
+        }
+      }
+
+      // Dock hover (client-space): highlight Collect/Sell/Trash slots when cursor is over them.
+      const canCollect = ent.kind === "card" && ent.card_type === "loot";
+      const canSell = ent.kind === "card" && ent.card_type !== "villager";
+      const canTrash = ent.kind === "card" && ent.card_type !== "villager";
+      let nextHover: "collect" | "sell" | "trash" | null = null;
+      if (canCollect && collectDeckEl) {
+        const r = collectDeckEl.getBoundingClientRect();
+        if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) nextHover = "collect";
+      }
+      if (!nextHover && canSell && sellDeckEl) {
+        const r = sellDeckEl.getBoundingClientRect();
+        if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) nextHover = "sell";
+      }
+      if (!nextHover && canTrash && trashDeckEl) {
+        const r = trashDeckEl.getBoundingClientRect();
+        if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) nextHover = "trash";
+      }
+      setHoverDock(nextHover);
+    });
   }
 
   async function onPointerUpBoard(ev: PointerEvent) {
@@ -302,73 +467,61 @@ export default function BoardRoute() {
     if (!id) return;
     setDraggingId(null);
     setHoverDock(null);
+    const hs = hoverStack();
+    setHoverStack(null);
+    const grp = dragGroup();
+    setDragGroup(null);
     const b = st().board;
     if (!b) return;
     const ent = entitiesById()[id];
     if (!ent) return;
 
-    // Collect drop zone: drop loot onto the Collect deck at bottom.
-    const isLoot = ent.kind === "card" && ent.card_type === "loot";
-    if (isLoot && collectDeckEl) {
-      const boardRect = boardEl.getBoundingClientRect();
-      const deckRect = collectDeckEl.getBoundingClientRect();
-      const deckLocal = {
-        left: deckRect.left - boardRect.left,
-        right: deckRect.right - boardRect.left,
-        top: deckRect.top - boardRect.top,
-        bottom: deckRect.bottom - boardRect.top
-      };
-      // deckLocal is in screen px; convert to world coords
-      const deckWorld = {
-        left: (deckLocal.left - pan().x) / zoom(),
-        right: (deckLocal.right - pan().x) / zoom(),
-        top: (deckLocal.top - pan().y) / zoom(),
-        bottom: (deckLocal.bottom - pan().y) / zoom()
-      };
-      const cx = ent.x + CARD_W / 2;
-      const cy = ent.y + CARD_H / 2;
-      const inCollectDeck = cx >= deckWorld.left && cx <= deckWorld.right && cy >= deckWorld.top && cy <= deckWorld.bottom;
-      if (inCollectDeck) {
-        await store.actions.collect(id);
+    // Group drag: persist all moved entities; skip zone/stack behavior.
+    if (grp && grp.ids.length > 1) {
+      for (const gid of grp.ids) {
+        const e = entitiesById()[gid];
+        if (!e) continue;
+        await store.actions.persistMove(gid, e.x, e.y);
+      }
+      return;
+    }
+
+    // Work loop MVP (v0.7): dropping a villager onto a task/resource starts work/gather timer.
+    if (ent.kind === "card" && ent.card_type === "villager") {
+      const candidates = (b.entities ?? []).filter((e) => e.id !== id && e.kind === "card" && (e.card_type === "task" || e.card_type === "resource"));
+      const near = candidates.find((e) => Math.hypot(e.x - ent.x, e.y - ent.y) < 60);
+      if (near) {
+        await store.actions.startWork(ent.id, near.id);
         return;
       }
     }
 
-    // Sell drop zone: sell most cards for coins (v0.6 MVP)
-    if (sellDeckEl) {
-      const boardRect = boardEl.getBoundingClientRect();
-      const deckRect = sellDeckEl.getBoundingClientRect();
-      const deckLocal = {
-        left: deckRect.left - boardRect.left,
-        right: deckRect.right - boardRect.left,
-        top: deckRect.top - boardRect.top,
-        bottom: deckRect.bottom - boardRect.top
-      };
-      const deckWorld = {
-        left: (deckLocal.left - pan().x) / zoom(),
-        right: (deckLocal.right - pan().x) / zoom(),
-        top: (deckLocal.top - pan().y) / zoom(),
-        bottom: (deckLocal.bottom - pan().y) / zoom()
-      };
-      const cx = ent.x + CARD_W / 2;
-      const cy = ent.y + CARD_H / 2;
-      const inSellDeck = cx >= deckWorld.left && cx <= deckWorld.right && cy >= deckWorld.top && cy <= deckWorld.bottom;
-      if (inSellDeck) {
-        await store.actions.sell(id);
-        return;
-      }
+    // Unified drop resolution (v0.7):
+    // 1) dock zones (collect/sell/trash)
+    // 2) stack preview target
+    // 3) move
+    if (hoverDock() === "collect") {
+      await store.actions.collect(id);
+      return;
     }
-
-    // Stack if dropped near another compatible card (very rough)
-    const candidates = (b.entities ?? []).filter((e) => e.id !== id && e.kind === "card");
-    const near = candidates.find((e) => Math.hypot(e.x - ent.x, e.y - ent.y) < 40);
-    if (near) {
+    if (hoverDock() === "sell") {
+      await store.actions.sell(id);
+      return;
+    }
+    if (hoverDock() === "trash") {
+      await store.actions.trash(id);
+      return;
+    }
+    if (hs?.id && hs.allowed) {
       try {
-        await store.actions.stack(id, near.id);
+        await store.actions.stack(id, hs.id);
         return;
       } catch {
         // fall through to move
       }
+    }
+    if (hs?.id && !hs.allowed) {
+      notificationsActions.pushInfo("Can't stack", "These cards aren't compatible.");
     }
 
     // No-overlap solver (v0.6 MVP): nudge away until we find a non-overlapping spot.
@@ -409,46 +562,6 @@ export default function BoardRoute() {
     await store.actions.persistMove(id, fx, fy);
   }
 
-  function emojiForEntity(e: BoardEntityDto): string {
-    if (e.kind === "deck") return "📦";
-    if (e.card_type === "task") return "📋";
-    if (e.card_type === "villager") return "🧑‍🌾";
-    if (e.card_type === "loot") {
-      const t = e.payload?.loot_type ?? e.subtype;
-      if (t === "coin") return "🪙";
-      if (t === "paper") return "📄";
-      if (t === "ink") return "🖋️";
-      if (t === "gear") return "⚙️";
-      if (t === "parts") return "📦";
-      return "🎁";
-    }
-    if (e.card_type === "resource") return "🍄";
-    if (e.card_type === "modifier") return "⏱️";
-    if (e.card_type === "food") return "🍎";
-    return "🃏";
-  }
-
-  function titleForEntity(e: BoardEntityDto): string {
-    if (e.kind === "deck") return "DECK";
-    return e.card_type.toUpperCase();
-  }
-
-  function nameForEntity(e: BoardEntityDto): string {
-    if (e.kind === "deck") return e.deck_id;
-    if (e.card_type === "loot") return String(e.payload?.loot_type ?? e.subtype ?? "loot");
-    if (e.card_type === "resource") return String(e.payload?.resource_card?.resource_type ?? e.subtype ?? "resource");
-    if (e.card_type === "modifier") return String(e.payload?.modifier_card?.type ?? e.subtype ?? "modifier");
-    if (e.card_type === "task") return String(e.payload?.task?.name ?? e.payload?.name ?? "task");
-    if (e.card_type === "villager") return String(e.payload?.name ?? "villager");
-    return e.card_type;
-  }
-
-  function subtitleForEntity(e: BoardEntityDto): string | undefined {
-    if (e.kind === "deck") return "Click to open";
-    if (e.card_type === "villager") return `${e.payload?.stamina ?? "?"}/${e.payload?.max_stamina ?? "?"} stamina`;
-    if (e.card_type === "loot") return `x${e.payload?.loot_amount ?? 1}`;
-    return undefined;
-  }
 
   return (
     <main class="min-h-screen">
@@ -523,16 +636,28 @@ export default function BoardRoute() {
 
             <Show when={leftTab() === "quests"}>
               <div class="mt-3 space-y-2">
-                <For each={st().questsActive}>
+                <For each={st().questsAll.filter((q) => q.type !== "daily")}>
                   {(q) => (
                     <div class="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <div class="text-sm font-extrabold text-slate-100">{q.title}</div>
-                      <div class="mt-1 text-xs text-slate-300">{q.description}</div>
+                      <div class="flex items-start justify-between gap-2">
+                        <div>
+                          <div class="text-sm font-extrabold text-slate-100">{q.title}</div>
+                          <div class="mt-1 text-xs text-slate-300">{q.description}</div>
+                        </div>
+                        <Show when={q.status === "complete"}>
+                          <button
+                            class="rounded-md bg-emerald-600 px-2 py-1 text-[11px] font-black text-white hover:bg-emerald-500"
+                            onClick={() => void store.actions.claimQuest(q.id)}
+                          >
+                            Claim
+                          </button>
+                        </Show>
+                      </div>
                     </div>
                   )}
                 </For>
 
-                <Show when={(st().questsActive?.length ?? 0) === 0}>
+                <Show when={(st().questsAll.filter((q) => q.type !== "daily")?.length ?? 0) === 0}>
                   <div class="text-sm text-slate-400">No active quests.</div>
                 </Show>
 
@@ -607,7 +732,7 @@ export default function BoardRoute() {
                   }}
                   title="Click to pan"
                 >
-                  <For each={st().board?.entities ?? []}>
+                  <For each={mm().cappedEntities}>
                     {(e) => {
                       const x = (e.x - mm().minX) * mm().scale;
                       const y = (e.y - mm().minY) * mm().scale;
@@ -623,7 +748,8 @@ export default function BoardRoute() {
                                 : e.card_type === "modifier"
                                   ? "bg-violet-300"
                                   : "bg-slate-300";
-                      return <div class={`absolute h-1.5 w-1.5 rounded-full ${color}`} style={{ left: `${x}px`, top: `${y}px` }} />;
+                      const size = e.kind === "deck" ? 2.5 : 1.5;
+                      return <div class={`absolute rounded-full ${color}`} style={{ left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` }} />;
                     }}
                   </For>
 
@@ -660,28 +786,57 @@ export default function BoardRoute() {
                 const renderEntities = renderIds.length ? renderIds.map((id) => entitiesById()[id]).filter(Boolean) : [e];
 
                 return (
-                  <div class="absolute" style={{ transform: `translate(${x}px, ${y}px)` }}>
+                  <div
+                    class={[
+                      "absolute",
+                      selectedSet().has(e.id) ? "outline outline-2 outline-amber-300/80 rounded-xl" : "",
+                      hoverStack()?.id === e.id
+                        ? hoverStack()?.allowed
+                          ? "ring-2 ring-sky-300 ring-offset-2 ring-offset-slate-950/40 rounded-xl"
+                          : "ring-2 ring-rose-300 ring-offset-2 ring-offset-slate-950/40 rounded-xl"
+                        : ""
+                    ].join(" ")}
+                    style={{ transform: `translate(${x}px, ${y}px)` }}
+                  >
                     <div class="relative">
                       <For each={renderEntities}>
                         {(ce, idx) => (
                           <div class="absolute" style={{ transform: `translate(0px, ${idx() * 22}px)` }}>
                             <div onPointerDown={(ev) => onPointerDownEntity(ev as unknown as PointerEvent, ce.id)}>
-                              <LegacyCard
-                              title={titleForEntity(ce)}
-                              emoji={emojiForEntity(ce)}
-                              name={nameForEntity(ce)}
-                              subtitle={subtitleForEntity(ce)}
-                              progress={
-                                ce.kind === "card" && ce.card_type === "task"
-                                  ? Number((ce as any).payload?.task?.work_progress ?? (ce as any).payload?.work_progress)
-                                  : undefined
-                              }
-                              collapsed={idx() > 0}
-                              showHandle={idx() === 0 && ce.kind === "card" && ce.card_type === "task" && !!stackId}
-                              onUnstack={stackId ? () => void unstack(stackId) : undefined}
-                              onInfo={() => {}}
-                              onDone={undefined}
-                              />
+                              <div
+                                style={{
+                                  transform: `translate(${st().animOffsets[ce.id]?.dx ?? 0}px, ${st().animOffsets[ce.id]?.dy ?? 0}px)`,
+                                  transition: "transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1)"
+                                }}
+                              >
+                                <LegacyCard
+                                title={titleForEntity(ce)}
+                                emoji={emojiForEntity(ce)}
+                                name={nameForEntity(ce)}
+                                subtitle={subtitleForEntity(ce)}
+                                active={ce.kind === "card" && ce.card_type === "villager" && !!(ce as any).payload?.working_on}
+                                progress={
+                                  (() => {
+                                    nowTick(); // re-evaluate
+                                    const timer = (ce as any).timer as { started_at: string; duration_ms: number } | undefined;
+                                    if (timer?.started_at && timer?.duration_ms) {
+                                      const start = Date.parse(timer.started_at);
+                                      const p = (Date.now() - start) / timer.duration_ms;
+                                      return Math.max(0, Math.min(1, p));
+                                    }
+                                    if (ce.kind === "card" && ce.card_type === "task") {
+                                      return Number((ce as any).payload?.task?.work_progress ?? (ce as any).payload?.work_progress);
+                                    }
+                                    return undefined;
+                                  })()
+                                }
+                                collapsed={idx() > 0}
+                                showHandle={idx() === 0 && ce.kind === "card" && ce.card_type === "task" && !!stackId}
+                                onUnstack={stackId ? () => void unstack(stackId) : undefined}
+                                onInfo={() => {}}
+                                onDone={undefined}
+                                />
+                              </div>
                             </div>
                           </div>
                         )}
@@ -724,6 +879,9 @@ export default function BoardRoute() {
           </div>
           <div ref={sellDeckEl} class={hoverDock() === "sell" ? "rounded-2xl ring-2 ring-slate-200" : ""}>
             <LegacyDeckCard size="dock" variant="sell" title="Sell" subtitle="+🪙" />
+          </div>
+          <div ref={trashDeckEl} class={hoverDock() === "trash" ? "rounded-2xl ring-2 ring-rose-300" : ""}>
+            <LegacyDeckCard size="dock" variant="sell" title="Trash" subtitle="🗑️" />
           </div>
           <For each={dockDecks()}>
             {(d) => {

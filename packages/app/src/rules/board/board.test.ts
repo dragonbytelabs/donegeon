@@ -17,7 +17,7 @@ describe("rules: board (v0.2)", () => {
     }
   });
 
-  test("applyMove rejects occupied positions", () => {
+  test("applyMove wiggles away from occupied positions", () => {
     const state = {
       gridSize: 100,
       entities: {
@@ -27,8 +27,10 @@ describe("rules: board (v0.2)", () => {
     } as const;
 
     const res = applyMove(state as any, { kind: "move_entity", entity_id: "a", to: { x: 100, y: 0 } });
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.reason).toBe("occupied");
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.events?.[0]?.kind).toBe("wiggle");
+    expect(res.next.entities.a.pos).not.toEqual({ x: 100, y: 0 });
   });
 });
 

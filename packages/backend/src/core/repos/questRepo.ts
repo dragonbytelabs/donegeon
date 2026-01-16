@@ -30,5 +30,9 @@ export class QuestRepo {
     this.byId.set(id, q);
     return true;
   }
+
+  update(quest: QuestModel): void {
+    this.byId.set(quest.id, quest);
+  }
 }
 

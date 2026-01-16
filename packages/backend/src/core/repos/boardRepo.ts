@@ -9,6 +9,8 @@ function emptyBoard(): BoardStateDto {
   return { grid_size: 100, entities: [], stacks: [] };
 }
 
+const SCHEMA_VERSION = 1;
+
 export class BoardRepo {
   private byPlayer = new Map<PlayerId, BoardStateDto>();
   private db: Database;
@@ -21,13 +23,36 @@ export class BoardRepo {
       // ignore
     }
     this.db = new Database(dbPath);
+    this.initSchema();
+  }
+
+  private initSchema() {
+    // Create metadata table to track schema version
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS board_state (
-        player_id TEXT PRIMARY KEY,
-        json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
+      CREATE TABLE IF NOT EXISTS _schema_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       );
     `);
+
+    // Get current schema version
+    const row = this.db.query("SELECT value FROM _schema_meta WHERE key = 'version'").get() as any;
+    const currentVersion = row?.value ? Number.parseInt(String(row.value), 10) : 0;
+
+    // Run migrations
+    if (currentVersion < 1) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS board_state (
+          player_id TEXT PRIMARY KEY,
+          json TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+      `);
+      this.db.exec("INSERT OR REPLACE INTO _schema_meta(key, value) VALUES ('version', '1')");
+    }
+
+    // Future migrations would go here:
+    // if (currentVersion < 2) { ... }
   }
 
   get(playerId: PlayerId): BoardStateDto {

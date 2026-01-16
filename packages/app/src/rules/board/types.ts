@@ -58,7 +58,10 @@ export type UnstackIntent = {
   stack_id: StackId;
 };
 
+// Events emitted by board rules (backend can forward as BoardEventDto for animations/UX).
+export type BoardRuleEvent = { kind: "wiggle"; entity_id: string; to: Vec2 };
+
 export type ApplyResult =
-  | { ok: true; next: BoardState }
+  | { ok: true; next: BoardState; events?: BoardRuleEvent[] }
   | { ok: false; reason: "not_found" | "occupied" | "out_of_bounds" };
 

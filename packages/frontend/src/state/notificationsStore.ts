@@ -72,6 +72,22 @@ function pushFromBoardEvents(events: BoardEventDto[]) {
       push({ kind: "success", title: "Sold", message: `+${e.loot_amount} ${e.loot_type}`, ttlMs: 2200 });
       continue;
     }
+    if (e.kind === "trashed") {
+      push({ kind: "info", title: "Trashed", message: "Card removed.", ttlMs: 1800 });
+      continue;
+    }
+    if (e.kind === "quest_completed") {
+      push({ kind: "success", title: "Quest completed!", message: e.title, ttlMs: 3200 });
+      continue;
+    }
+    if (e.kind === "timer_started") {
+      push({ kind: "info", title: "Working...", message: e.timer.kind === "work" ? "Task started" : "Gather started", ttlMs: 1500 });
+      continue;
+    }
+    if (e.kind === "timer_completed") {
+      push({ kind: "success", title: "Done!", message: "Reward spawned.", ttlMs: 2200 });
+      continue;
+    }
   }
 }
 

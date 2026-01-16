@@ -10,13 +10,42 @@ import type {
 import { canStackCards, inBounds, isCard, isOccupied } from "./legality.js";
 import { snapToGrid } from "./snap.js";
 
+function findNearestOpen(state: BoardState, start: Vec2, ignoreEntityId: string): Vec2 | null {
+  const step = state.gridSize;
+  // Spiral-ish search around start, already snapped.
+  const tries = 300;
+  for (let i = 0; i < tries; i++) {
+    const ring = Math.floor(Math.sqrt(i));
+    const dx = ((i % (ring * 2 + 1)) - ring) * step;
+    const dy = (ring - (Math.floor(i / (ring * 2 + 1)) % (ring * 2 + 1))) * step;
+    const p = snapToGrid({ x: start.x + dx, y: start.y + dy }, step);
+    if (!inBounds(p)) continue;
+    if (!isOccupied(state, p, ignoreEntityId)) return p;
+  }
+  return null;
+}
+
 export function applyMove(state: BoardState, intent: MoveEntityIntent): ApplyResult {
   const e = state.entities[intent.entity_id];
   if (!e) return { ok: false, reason: "not_found" };
 
   const snapped = snapToGrid(intent.to, state.gridSize);
   if (!inBounds(snapped)) return { ok: false, reason: "out_of_bounds" };
-  if (isOccupied(state, snapped, intent.entity_id)) return { ok: false, reason: "occupied" };
+  if (isOccupied(state, snapped, intent.entity_id)) {
+    const open = findNearestOpen(state, snapped, intent.entity_id);
+    if (!open) return { ok: false, reason: "occupied" };
+    return {
+      ok: true,
+      events: [{ kind: "wiggle", entity_id: intent.entity_id, to: open }],
+      next: {
+        ...state,
+        entities: {
+          ...state.entities,
+          [intent.entity_id]: { ...e, pos: open }
+        }
+      }
+    };
+  }
 
   return {
     ok: true,

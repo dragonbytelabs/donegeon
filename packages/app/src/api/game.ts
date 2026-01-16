@@ -78,6 +78,12 @@ export type DeckOpenTransitionDto = {
   offsets: Array<{ order: number; dx: number; dy: number }>;
 };
 
+export type BoardTimerDto = {
+  kind: "work" | "gather";
+  started_at: string; // ISO
+  duration_ms: number;
+};
+
 // v0.3 Board persistence DTOs
 export type BoardEntityDto =
   | { id: string; kind: "deck"; deck_id: string; x: number; y: number; stack_id?: string }
@@ -90,6 +96,7 @@ export type BoardEntityDto =
       y: number;
       stack_id?: string;
       payload?: any;
+      timer?: BoardTimerDto;
     };
 
 export type StackDto = {
@@ -111,4 +118,14 @@ export type BoardEventDto =
   | { kind: "collected"; entity_id: string }
   | { kind: "consumed"; entity_id: string }
   | { kind: "sold"; entity_id: string; loot_type: string; loot_amount: number }
-  | { kind: "deck_open_fanout"; deck_entity_id: string; card_entity_ids: string[]; transition: DeckOpenTransitionDto };
+  | { kind: "trashed"; entity_id: string }
+  | { kind: "quest_completed"; quest_id: string; title: string }
+  | { kind: "timer_started"; entity_id: string; timer: BoardTimerDto }
+  | { kind: "timer_completed"; entity_id: string; timer_kind: BoardTimerDto["kind"]; reward_entity_id?: string }
+  | {
+      kind: "deck_open_fanout";
+      deck_entity_id: string;
+      card_entity_ids: string[];
+      transition: DeckOpenTransitionDto;
+      origin: { x: number; y: number };
+    };

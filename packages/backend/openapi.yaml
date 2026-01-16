@@ -1225,6 +1225,332 @@ paths:
                   next_cursor:
                     type: string
 
+  # Board Management
+  /api/board/state:
+    get:
+      summary: Get board state
+      description: Get the current board state for the authenticated player (auto-spawns initial villagers if empty)
+      responses:
+        '200':
+          description: Board state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardState'
+
+  /api/board/spawn-deck:
+    post:
+      summary: Spawn deck on board
+      description: Spawn a deck entity on the board near the origin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deck_id:
+                  type: string
+                  description: ID of the deck to spawn
+              required:
+                - deck_id
+      responses:
+        '200':
+          description: Deck spawned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+
+  /api/board/move:
+    post:
+      summary: Move entity
+      description: Move a board entity to a new position (with stack support)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entity_id:
+                  type: string
+                  description: ID of entity to move
+                x:
+                  type: number
+                  description: Target X coordinate
+                y:
+                  type: number
+                  description: Target Y coordinate
+              required:
+                - entity_id
+                - x
+                - y
+      responses:
+        '200':
+          description: Entity moved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '404':
+          description: Entity not found
+
+  /api/board/stack:
+    post:
+      summary: Stack cards
+      description: Stack two compatible cards together
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_id:
+                  type: string
+                  description: ID of card to stack
+                target_id:
+                  type: string
+                  description: ID of target card
+              required:
+                - source_id
+                - target_id
+      responses:
+        '200':
+          description: Cards stacked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '400':
+          description: Cards not compatible for stacking
+
+  /api/board/unstack:
+    post:
+      summary: Unstack cards
+      description: Split a stack apart into individual cards
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stack_id:
+                  type: string
+                  description: ID of stack to unstack
+              required:
+                - stack_id
+      responses:
+        '200':
+          description: Stack unstacked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+
+  /api/board/open-deck:
+    post:
+      summary: Open deck
+      description: Open a deck entity, spawning its cards in a fan-out pattern
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deck_entity_id:
+                  type: string
+                  description: ID of deck entity to open
+              required:
+                - deck_entity_id
+      responses:
+        '200':
+          description: Deck opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '404':
+          description: Deck not found
+
+  /api/board/collect:
+    post:
+      summary: Collect loot
+      description: Collect a loot card from the board and add to inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entity_id:
+                  type: string
+                  description: ID of loot card entity
+              required:
+                - entity_id
+      responses:
+        '200':
+          description: Loot collected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '404':
+          description: Card not found
+        '400':
+          description: Not a loot card
+
+  /api/board/sell:
+    post:
+      summary: Sell card
+      description: Sell a card for loot (rewards based on balance config)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entity_id:
+                  type: string
+                  description: ID of card to sell
+              required:
+                - entity_id
+      responses:
+        '200':
+          description: Card sold
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '404':
+          description: Card not found
+        '400':
+          description: Card cannot be sold
+
+  /api/board/trash:
+    post:
+      summary: Trash card
+      description: Remove a card from the board (no reward)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entity_id:
+                  type: string
+                  description: ID of card to trash
+              required:
+                - entity_id
+      responses:
+        '200':
+          description: Card trashed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '404':
+          description: Card not found
+        '400':
+          description: Card cannot be trashed
+
+  /api/board/start-work:
+    post:
+      summary: Start work/gather
+      description: Villager starts working on a task or gathering from a resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                villager_entity_id:
+                  type: string
+                  description: ID of villager card
+                target_entity_id:
+                  type: string
+                  description: ID of task or resource card
+              required:
+                - villager_entity_id
+                - target_entity_id
+      responses:
+        '200':
+          description: Work started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+        '404':
+          description: Entity not found
+        '400':
+          description: Invalid work target
+
+  /api/board/tick:
+    post:
+      summary: Board tick
+      description: Check and complete expired timers, spawn rewards
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Tick processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardActionResult'
+
+  /api/board/feed:
+    post:
+      summary: Feed villager
+      description: Feed a villager to restore stamina
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                villager_id:
+                  type: string
+                  description: ID of villager to feed
+                food_entity_id:
+                  type: string
+                  description: ID of food card entity
+              required:
+                - villager_id
+                - food_entity_id
+      responses:
+        '200':
+          description: Villager fed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    $ref: '#/components/schemas/BoardState'
+                  villager:
+                    type: object
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BoardEvent'
+        '404':
+          description: Villager or food not found
+        '400':
+          description: Invalid food or villager at full stamina
+
   # Productivity Stats
   /api/tasks/completed/stats:
     get:
@@ -2211,3 +2537,214 @@ components:
             $ref: '#/components/schemas/Label'
         next_cursor:
           type: string
+
+    # Board schemas
+    BoardState:
+      type: object
+      properties:
+        grid_size:
+          type: number
+          description: Grid snap size in world units
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardEntity'
+        stacks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Stack'
+
+    BoardEntity:
+      oneOf:
+        - type: object
+          properties:
+            id:
+              type: string
+            kind:
+              type: string
+              enum: [deck]
+            deck_id:
+              type: string
+            x:
+              type: number
+            y:
+              type: number
+            stack_id:
+              type: string
+        - type: object
+          properties:
+            id:
+              type: string
+            kind:
+              type: string
+              enum: [card]
+            card_type:
+              type: string
+              enum: [task, villager, modifier, loot, resource, food]
+            subtype:
+              type: string
+            x:
+              type: number
+            y:
+              type: number
+            stack_id:
+              type: string
+            payload:
+              type: object
+            timer:
+              $ref: '#/components/schemas/BoardTimer'
+
+    BoardTimer:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [work, gather]
+        started_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: number
+
+    Stack:
+      type: object
+      properties:
+        id:
+          type: string
+        task_id:
+          type: string
+        attached_ids:
+          type: array
+          items:
+            type: string
+
+    BoardEvent:
+      oneOf:
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [wiggle]
+            entity_id:
+              type: string
+            to:
+              type: object
+              properties:
+                x:
+                  type: number
+                y:
+                  type: number
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [stacked]
+            stack_id:
+              type: string
+            entity_ids:
+              type: array
+              items:
+                type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [unstacked]
+            stack_id:
+              type: string
+            entity_ids:
+              type: array
+              items:
+                type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [collected]
+            entity_id:
+              type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [consumed]
+            entity_id:
+              type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [sold]
+            entity_id:
+              type: string
+            loot_type:
+              type: string
+            loot_amount:
+              type: number
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [trashed]
+            entity_id:
+              type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [quest_completed]
+            quest_id:
+              type: string
+            title:
+              type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [timer_started]
+            entity_id:
+              type: string
+            timer:
+              $ref: '#/components/schemas/BoardTimer'
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [timer_completed]
+            entity_id:
+              type: string
+            timer_kind:
+              type: string
+              enum: [work, gather]
+            reward_entity_id:
+              type: string
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum: [deck_open_fanout]
+            deck_entity_id:
+              type: string
+            card_entity_ids:
+              type: array
+              items:
+                type: string
+            transition:
+              type: object
+            origin:
+              type: object
+              properties:
+                x:
+                  type: number
+                y:
+                  type: number
+
+    BoardActionResult:
+      type: object
+      properties:
+        state:
+          $ref: '#/components/schemas/BoardState'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardEvent'

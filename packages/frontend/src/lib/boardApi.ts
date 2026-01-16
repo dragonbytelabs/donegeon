@@ -38,6 +38,18 @@ export async function boardSell(entityId: string): Promise<{ state: BoardStateDt
   return await apiPostWithHeaders("/api/board/sell", { entity_id: entityId }, playerHeaders());
 }
 
+export async function boardTrash(entityId: string): Promise<{ state: BoardStateDto; events: BoardEventDto[] }> {
+  return await apiPostWithHeaders("/api/board/trash", { entity_id: entityId }, playerHeaders());
+}
+
+export async function boardStartWork(villagerEntityId: string, targetEntityId: string): Promise<{ state: BoardStateDto; events: BoardEventDto[] }> {
+  return await apiPostWithHeaders("/api/board/start-work", { villager_entity_id: villagerEntityId, target_entity_id: targetEntityId }, playerHeaders());
+}
+
+export async function boardTick(): Promise<{ state: BoardStateDto; events: BoardEventDto[] }> {
+  return await apiPostWithHeaders("/api/board/tick", {}, playerHeaders());
+}
+
 export async function boardAssignTask(taskId: number, villagerId: string) {
   return await apiPostWithHeaders("/api/board/assign-task", { task_id: taskId, villager_id: villagerId }, playerHeaders());
 }

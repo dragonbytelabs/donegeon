@@ -1,8 +1,8 @@
 # DONEGEON BIBLE
 
-Single source of truth for “what exists in the repo right now”.
+Single source of truth for "what exists in the repo right now".
 
-Last updated: 2026-01-15
+Last updated: 2026-01-16 (v0.7 complete)
 
 ## What is Donegeon?
 Donegeon is a backend-first task system expressed as a game. The backend is authoritative (“backend is law”), and the frontend renders state + calls APIs.
@@ -123,8 +123,8 @@ Key files:
 - Deck dock moved **outside** the play area as a bottom HUD row (fixed-size).
 - Added a visible affordance: “Right-drag to pan • Wheel to zoom”.
 
-## v0.6 Stacklands delta (current)
-- **Play area clipping**: world entities are clipped to the board rectangle; you won’t see “floating cards outside” until you pan there.
+## v0.6 Stacklands delta
+- **Play area clipping**: world entities are clipped to the board rectangle; you won't see "floating cards outside" until you pan there.
 - **Dock sizing**: dock cards are ~70% size via `LegacyDeckCard size="dock"`.
 - **Quest panel**: left sidebar can switch between `Quests` and `Today`, using:
   - `GET /api/quests/active`
@@ -141,6 +141,41 @@ Key files:
   - `BoardRepo` persists `BoardStateDto` keyed by `playerId` into SQLite (default path `./.data/donegeon.sqlite`).
   - Env var override: `DONEGEON_DB_PATH=/path/to/db.sqlite`
   - `.data/` is gitignored.
+
+## v0.7 Gameplay + Zones (current)
+- **Villagers on board (auto-spawn)**: When a player's board is empty, 2 initial villager cards are auto-spawned near the origin. This ensures the sidebar "villagers" count matches visible board entities from the start.
+- **Trash zone**: New `POST /api/board/trash` endpoint removes cards from the board (no reward). Frontend shows a **Trash** slot in the dock with rose highlight on hover. Cannot trash villagers.
+- **Balance config economy**: `packages/app/src/rules/balance.ts` now includes:
+  - `sellCardCoinReward`: default coin reward for selling non-loot cards (1 coin)
+  - `sellLootPassthrough`: if true, selling loot cards gives their loot value instead of coins (default: true)
+  - `workTimerDurationMs` / `gatherTimerDurationMs`: timer durations for work/gather (4500ms / 5500ms)
+  - `workRewardCoin` / `gatherRewardCoin`: coin rewards for completing timers (1 coin each)
+- **Server-driven timer durations**: Work/gather timers use `defaultBalance` config values instead of hardcoded durations.
+- **Server-driven rewards**: Timer completion rewards are determined by balance config.
+- **Unified drop pipeline**: Frontend `Board.tsx` resolves drops in order: (1) dock zones (collect/sell/trash), (2) stack preview target, (3) move.
+- **Persistence hardening**: SQLite schema versioning with `_schema_meta` table tracking version. Migrations are applied automatically on startup. Current schema version: 1.
+- **Per-player isolation tests**: `packages/backend/src/core/isolation.test.ts` verifies board state isolation per player. Loot/villager/task isolation requires further refactoring (noted as limitation).
+- **Keyboard shortcuts**: Already implemented in v0.6, now documented:
+  - `?` - Show help
+  - `Esc` - Clear selection / close help
+  - `0` - Reset zoom to 1x
+  - `c` - Center camera on (boardWidth/2, boardHeight/2)
+- **Work/gather loop MVP**: Already implemented in v0.6, now documented: Dropping a villager onto a task/resource card starts a work/gather timer. Completion spawns a coin loot card reward near the worksite and clears the villager's `working_on` pointer.
+- **Villager "active" visuals**: Frontend checks `working_on` payload field to show active state (shimmer/glow) on villager cards.
+- **Selection + multi-drag**: Already implemented in v0.6, now documented: Shift-click to multi-select, drag selection to move group together.
+- **Stack interaction polish**: Hover preview shows whether cards can stack (green ring) or not (red ring). Feedback via notifications when attempting incompatible stack.
+- **Deck open animation v2**: Server emits `deck_open_fanout` events with offsets; frontend animates cards from deck origin to fan-out positions using CSS transitions.
+- **Quest completion flow**: `claimQuest` action in `boardStore.ts` calls `POST /api/quests/:id/complete` and shows reward toasts.
+- **Server-driven wiggle animation**: Backend emits `wiggle` events when it nudges a card to an open spot during move conflicts. Frontend animates the wiggle visually using CSS transitions (280ms ease-out).
+- **Quest progress events**: Quest system now emits server events when quests complete, instead of client-side polling and diff detection. `POST /api/quests/refresh` returns events array with quest state changes.
+- **Board entity bounds model**: `packages/app/src/rules/board/bounds.ts` provides canonical sizing for collision/hover/minimap (120x160 for all entities currently).
+- **Zone system (true zones)**: Complete zone implementation in `packages/app/src/rules/board/zones.ts` with `applyCollectZone`, `applySellZone`, and `applyTrashZone` functions. Each returns typed results with loot deltas and events.
+- **OpenAPI board coverage**: All board endpoints (`/api/board/*`) are now fully documented in `packages/backend/openapi.yaml` with request/response schemas for `BoardState`, `BoardEntity`, `BoardEvent`, `BoardTimer`, and `BoardActionResult`.
+- **Frontend perf optimizations**: 
+  - Helper functions (`emojiForEntity`, `titleForEntity`, etc.) moved outside component to avoid re-creation on every render
+  - Minimap entity rendering capped at 100 entities for large boards
+  - Drag operations use `batch()` to reduce re-renders during pointer move
+  - Optimistic move batching during multi-entity drag
 
 ## Implemented features (current)
 
@@ -180,6 +215,23 @@ The backend implements the Go snippet’s endpoints (functional in-memory). Key 
   - `POST /api/decks/:id/open`
   - Deck contents are based on `packages/docs/DECKS.md` (lightweight approximation)
 
+- **Board**
+  - `GET /api/board/state`: Get per-player board state (auto-spawns initial villagers if empty)
+  - `POST /api/board/spawn-deck`: Spawn a deck entity on the board
+  - `POST /api/board/move`: Move an entity (with stack support)
+  - `POST /api/board/stack`: Stack two cards together
+  - `POST /api/board/unstack`: Unstack a stack
+  - `POST /api/board/open-deck`: Open a deck entity, spawning cards
+  - `POST /api/board/collect`: Collect a loot card (adds to inventory)
+  - `POST /api/board/sell`: Sell a card (awards loot based on balance config)
+  - `POST /api/board/trash`: Trash a card (removes from board, no reward)
+  - `POST /api/board/start-work`: Villager starts working on task/resource (timer)
+  - `POST /api/board/tick`: Check and complete expired timers, spawn rewards
+  - `POST /api/board/assign-task`: Assign task to villager (legacy API)
+  - `POST /api/board/complete-task`: Complete a task (legacy API)
+  - `POST /api/board/clear-zombie`: Clear a zombie (legacy API)
+  - `POST /api/board/feed`: Feed a villager to restore stamina
+
 - **Modifiers**
   - List modifiers
   - Create+attach modifier to a task
@@ -209,7 +261,13 @@ The backend implements the Go snippet’s endpoints (functional in-memory). Key 
   - Some endpoints currently return minimal placeholder data (e.g. remaining-undrawn, telemetry stats, cards)
 
 ### OpenAPI coverage
-OpenAPI spec includes the current endpoint paths (summary-level), and should be expanded with request/response schemas as behaviors stabilize.
+OpenAPI spec includes the current endpoint paths (summary-level) with comprehensive schemas for request/response bodies.
+
+**v0.7 status**: ✅ Complete. All board endpoints (`/api/board/*`) are fully documented in `packages/backend/openapi.yaml` including:
+- All 11 board action endpoints (state, spawn-deck, move, stack, unstack, open-deck, collect, sell, trash, start-work, tick, feed)
+- Complete schema definitions for `BoardState`, `BoardEntity`, `BoardEvent`, `BoardTimer`, `Stack`, and `BoardActionResult`
+- Request/response body schemas with proper types and descriptions
+- Event variant schemas covering all 11 event types (wiggle, stacked, unstacked, collected, consumed, sold, trashed, quest_completed, timer_started, timer_completed, deck_open_fanout)
 
 ## Tests
 Backend has an automated “hit every endpoint” smoke test suite (in-memory request execution) to ensure all routes respond and basic flows work.
