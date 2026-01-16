@@ -18,6 +18,7 @@ logs/
 pids
 *.pid
 *.seed
+.data/
 
 # Coverage directory used by tools like istanbul
 coverage/

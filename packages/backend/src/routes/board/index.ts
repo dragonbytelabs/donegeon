@@ -248,6 +248,40 @@ boardRouter.post(
 );
 
 boardRouter.post(
+  "/board/sell",
+  zValidator("json", z.object({ entity_id: z.string() })),
+  (c) => {
+    const st = stateFromContext(c);
+    const pid = playerIdFromContext(c);
+    const dto = st.boardRepo.get(pid);
+    const board = dtoToState(dto);
+    const { entity_id } = c.req.valid("json");
+    const ent: any = board.entities[entity_id];
+    if (!ent || ent.kind !== "card") return c.json({ error: "card not found" }, 404);
+
+    // Minimal sell rules (v0.6 MVP):
+    // - Loot card: same as collect
+    // - Modifier/resource/food/task: sell for 1 coin
+    // - Villager: not sellable
+    if (ent.card_type === "villager") return c.json({ error: "villager not sellable" }, 400);
+
+    let loot_type = "coin";
+    let loot_amount = 1;
+    if (ent.card_type === "loot") {
+      loot_type = String(ent.payload?.loot_type ?? "coin");
+      loot_amount = Number(ent.payload?.loot_amount ?? 1) || 1;
+    }
+
+    st.lootRepo.addOne(loot_type as any, loot_amount);
+    delete board.entities[entity_id];
+    const nextDto = stateToDto(board);
+    st.boardRepo.set(pid, nextDto);
+    const events: BoardEventDto[] = [{ kind: "sold", entity_id, loot_type, loot_amount }];
+    return c.json({ state: nextDto, events });
+  }
+);
+
+boardRouter.post(
   "/board/assign-task",
   zValidator("json", z.object({ task_id: z.number(), villager_id: z.string() })),
   (c) => {

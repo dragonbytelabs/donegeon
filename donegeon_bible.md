@@ -115,6 +115,33 @@ Key files:
   - Store: `packages/frontend/src/state/boardStore.ts` (`createStore` + `produce`)
   - Policy: optimistic local moves, then **reconcile to server**, plus a periodic pull when idle (server wins).
 
+## v0.5 Stacklands-style UI polish
+- Bottom-right **notifications** (toast stack) driven by backend board `events`:
+  - Store: `packages/frontend/src/state/notificationsStore.ts`
+  - UI: `packages/frontend/src/components/Notifications.tsx`
+  - Wired from: `packages/frontend/src/state/boardStore.ts`
+- Deck dock moved **outside** the play area as a bottom HUD row (fixed-size).
+- Added a visible affordance: “Right-drag to pan • Wheel to zoom”.
+
+## v0.6 Stacklands delta (current)
+- **Play area clipping**: world entities are clipped to the board rectangle; you won’t see “floating cards outside” until you pan there.
+- **Dock sizing**: dock cards are ~70% size via `LegacyDeckCard size="dock"`.
+- **Quest panel**: left sidebar can switch between `Quests` and `Today`, using:
+  - `GET /api/quests/active`
+  - `GET /api/quests/daily`
+- **Quest completion toasts (MVP)**: client polls `GET /api/quests` and pushes a toast when a quest transitions to `status: "complete"`.
+- **Sell slot + zone hit-testing**:
+  - New endpoint: `POST /api/board/sell` removes a card from board and awards loot (default: +1 coin).
+  - Frontend shows a **Sell** slot beside **Collect** and highlights slots when hovering during drag.
+- **No-overlap solver (MVP)**: on drop, client nudges to nearest open space to avoid overlapping cards (unless stacking).
+- **Progress bar support**: `LegacyCard` can render a thin progress bar when `progress` is provided (currently wired for task payloads that include `work_progress`).
+- **Minimap**: board minimap with viewport rectangle + click-to-pan.
+- **Camera polish**: inertia pan after right-drag release.
+- **SQLite board persistence** (backend):
+  - `BoardRepo` persists `BoardStateDto` keyed by `playerId` into SQLite (default path `./.data/donegeon.sqlite`).
+  - Env var override: `DONEGEON_DB_PATH=/path/to/db.sqlite`
+  - `.data/` is gitignored.
+
 ## Implemented features (current)
 
 ### Core API routes
@@ -163,6 +190,7 @@ The backend implements the Go snippet’s endpoints (functional in-memory). Key 
   - List quests, list active, list daily
   - Complete/claim a quest (starter quest exists)
   - Refresh quest progress (minimal placeholder service)
+  - Sell board card: `POST /api/board/sell` (v0.6)
 
 - **Recipes**
   - List recipes

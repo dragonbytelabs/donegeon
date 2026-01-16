@@ -1,6 +1,8 @@
 .turbo/
 **/.turbo/
 .tmp
+ .data/
+ **/.data/
 
 # dependencies
 node_modules/

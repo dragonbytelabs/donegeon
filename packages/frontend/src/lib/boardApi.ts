@@ -34,6 +34,10 @@ export async function boardCollect(entityId: string): Promise<{ state: BoardStat
   return await apiPostWithHeaders("/api/board/collect", { entity_id: entityId }, playerHeaders());
 }
 
+export async function boardSell(entityId: string): Promise<{ state: BoardStateDto; events: BoardEventDto[] }> {
+  return await apiPostWithHeaders("/api/board/sell", { entity_id: entityId }, playerHeaders());
+}
+
 export async function boardAssignTask(taskId: number, villagerId: string) {
   return await apiPostWithHeaders("/api/board/assign-task", { task_id: taskId, villager_id: villagerId }, playerHeaders());
 }

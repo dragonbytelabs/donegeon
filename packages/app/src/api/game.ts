@@ -110,4 +110,5 @@ export type BoardEventDto =
   | { kind: "unstacked"; stack_id: string; entity_ids: string[] }
   | { kind: "collected"; entity_id: string }
   | { kind: "consumed"; entity_id: string }
+  | { kind: "sold"; entity_id: string; loot_type: string; loot_amount: number }
   | { kind: "deck_open_fanout"; deck_entity_id: string; card_entity_ids: string[]; transition: DeckOpenTransitionDto };

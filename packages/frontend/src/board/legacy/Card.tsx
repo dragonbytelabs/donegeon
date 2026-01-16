@@ -14,6 +14,7 @@ export type LegacyCardProps = {
   onInfo?: () => void;
   onDone?: () => void;
   collapsed?: boolean; // for stacked behind cards: show only title strip
+  progress?: number; // 0..1 (optional)
 };
 
 export function LegacyCard(props: LegacyCardProps) {
@@ -88,6 +89,15 @@ export function LegacyCard(props: LegacyCardProps) {
             </button>
           </div>
         </Show>
+      </Show>
+
+      <Show when={!props.collapsed && props.progress != null}>
+        <div class="absolute bottom-0 left-0 right-0 h-[4px] bg-black/10">
+          <div
+            class="h-full bg-emerald-500"
+            style={{ width: `${Math.max(0, Math.min(1, props.progress ?? 0)) * 100}%` }}
+          />
+        </div>
       </Show>
     </div>
   );
