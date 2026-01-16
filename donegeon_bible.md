@@ -75,9 +75,9 @@ The backend is a **functional in-memory** port of the original Go server’s API
   - API helper: `packages/frontend/src/lib/api.ts`
   - Store: `packages/frontend/src/state/gameStore.ts`
 
-## Frontend routes (v0.2)
+## Frontend routes (v0.4)
 - `/`: dashboard (`packages/frontend/src/app.tsx`)
-- `/board`: board MVP (`packages/frontend/src/routes/Board.tsx`) + surface (`packages/frontend/src/board/BoardSurface.tsx`)
+- `/board`: board (camera + deck dock) (`packages/frontend/src/routes/Board.tsx`)
  - `/tasks`: task list view (`packages/frontend/src/routes/Tasks.tsx`)
 
 ## v0.1 rules-first direction
@@ -107,6 +107,13 @@ Key files:
 - Board rules: `packages/app/src/rules/board/*`
 - Backend: `packages/backend/src/routes/board/index.ts`, `packages/backend/src/core/repos/boardRepo.ts`
 - Frontend: `packages/frontend/src/routes/Board.tsx`, `packages/frontend/src/board/legacy/Card.tsx`, `packages/frontend/src/lib/boardApi.ts`, `packages/frontend/src/lib/playerId.ts`
+
+## v0.4 board UX + hybrid sync
+- `/board` now uses an **infinite canvas camera**: right-drag pans, mouse wheel zooms; entities are rendered in world coordinates inside a transformed “world layer”.
+- Deck dock is populated from `GET /api/decks` and includes locked overlays + unlock progress. `organization` is presented as **Modifiers** in the dock UI.
+- Frontend uses a board-local store to smooth UX while keeping server as source of truth:
+  - Store: `packages/frontend/src/state/boardStore.ts` (`createStore` + `produce`)
+  - Policy: optimistic local moves, then **reconcile to server**, plus a periodic pull when idle (server wins).
 
 ## Implemented features (current)
 

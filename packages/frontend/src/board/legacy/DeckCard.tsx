@@ -28,7 +28,7 @@ export function LegacyDeckCard(props: LegacyDeckCardProps) {
   return (
     <div
       class={[
-        "relative h-[190px] w-[140px] select-none overflow-hidden rounded-2xl border shadow-lg",
+        "relative h-[160px] w-[120px] select-none overflow-hidden rounded-2xl border shadow-lg",
         theme.bg,
         theme.border,
         theme.shadow,
@@ -46,7 +46,7 @@ export function LegacyDeckCard(props: LegacyDeckCardProps) {
       <div class="absolute inset-0 opacity-20" style={{ "background-image": "radial-gradient(circle at 30% 20%, white 0%, transparent 55%)" }} />
 
       <div class="relative flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
-        <div class="text-2xl font-black tracking-tight">{props.title}</div>
+        <div class="text-xl font-black tracking-tight">{props.title}</div>
         {props.subtitle ? <div class="text-xs font-semibold opacity-90">{props.subtitle}</div> : null}
         {props.footer ? <div class="mt-3 text-xs font-black">{props.footer}</div> : null}
       </div>
