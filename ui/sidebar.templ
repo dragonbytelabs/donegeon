@@ -1,0 +1,30 @@
+package ui
+
+templ Sidebar() {
+	<aside
+		id="sidebar"
+		class="h-full border-r border-border bg-card/40 backdrop-blur"
+	>
+        <div class="p-3 border-b border-border flex items-center justify-between">
+            <div class="text-sm font-semibold">Workspace</div>
+            <button id="sidebarProfile" class="rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent" type="button">
+                Me
+            </button>
+        </div>
+		<div class="p-3 text-xs font-semibold text-muted-foreground">Card Catalog</div>
+		<div class="space-y-2 px-3 pb-3">
+			<button data-spawn="coin" class="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm hover:bg-accent">
+				Coin
+			</button>
+			<button data-spawn="wood" class="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm hover:bg-accent">
+				Wood
+			</button>
+			<button data-spawn="berry" class="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm hover:bg-accent">
+				Berry
+			</button>
+			<button data-spawn="villager" class="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm hover:bg-accent">
+				Villager
+			</button>
+		</div>
+	</aside>
+}
