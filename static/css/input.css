@@ -199,7 +199,7 @@
   }
 
   .sl-card__title {
-    @apply absolute left-0 right-0 top-0 h-[18px] px-1 flex items-center text-[10px] font-semibold;
+    @apply absolute left-0 right-0 top-0 truncate h-[18px] px-1 flex items-center text-[10px] font-semibold;
     border-bottom: 2px solid rgba(0, 0, 0, 0.65);
     background: var(--sl-title-bg);
     color: rgba(0, 0, 0, 0.85);
@@ -217,7 +217,7 @@
   }
 
   .sl-badge {
-    @apply absolute bottom-[6px] w-[16px] h-[16px] rounded-full text-[10px] font-bold flex items-center justify-center;
+    @apply absolute bottom-[6px] w-[16px] h-[16px] truncate rounded-full text-[10px] font-bold flex items-center justify-center;
     border: 2px solid rgba(0, 0, 0, 0.65);
     background: rgba(255, 255, 255, 0.85);
     color: rgba(0, 0, 0, 0.85);

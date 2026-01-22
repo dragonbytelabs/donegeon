@@ -1,0 +1,22 @@
+{
+  "name": "frontend",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build:board": "bun build src/board/index.ts --outfile ../static/js/board.js",
+    "build:builder": "bun build src/builder/index.ts --outfile ../static/js/builder.js",
+    "build": "bun run build:board && bun run build:builder",
+    "dev:board": "bun build src/board/index.ts --outfile ../static/js/board.js --watch",
+    "dev:builder": "bun build src/builder/index.ts --outfile ../static/js/builder.js --watch"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "immer": "^11.1.3"
+  }
+}

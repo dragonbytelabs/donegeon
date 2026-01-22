@@ -22,11 +22,17 @@ tasks:
     cmds:
       - ./tailwindcss -i ./static/css/input.css -o ./static/css/output.css --watch
 
-  ts-watch:
-    desc: Watch/build TypeScript behavior scripts
+  fe-install:
     cmds:
-      - esbuild ./static/ts/* --bundle --sourcemap --outdir=./static/js --watch
+      - cd frontend && bun install
 
+  fe-build:
+    cmds:
+      - cd frontend && bun run build
+
+  fe-watch:
+    cmds:
+      - cd frontend && bun run dev:board
   # Start development server
   dev:
     desc: Start development server with hot reload
@@ -35,4 +41,4 @@ tasks:
     cmds:
       - echo "Starting app..."
       - sleep 2
-      - task --parallel tailwind-watch templ ts-watch
+      - task --parallel tailwind-watch templ fe-watch

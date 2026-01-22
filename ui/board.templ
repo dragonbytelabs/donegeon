@@ -21,7 +21,10 @@ templ Board() {
 
 		<div class="grid h-full w-full grid-cols-[260px_1fr]" id="appShell">
 			@Sidebar()
-
+			<div
+				id="sidebarBackdrop"
+				class="fixed inset-0 z-40 hidden bg-black/50 md:hidden"
+			></div>
 			<main class="relative h-full w-full overflow-hidden">
 				<div id="boardRoot" class="relative h-full w-full dotted-field">
 					<div id="board" class="absolute inset-0"></div>
