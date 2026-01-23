@@ -354,6 +354,13 @@ export function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: 
     // - shift+drag TOP card => POP top into new stack (any stack size)
     // - shift+drag middle/bottom => split at idx (new gets [idx..end])
     if (isMouse && pe.shiftKey && idx >= 0 && cards.length > 1) {
+      // Special case: stack of 2, shift-drag the BACK/BOTTOM card
+      if (cards.length === 2 && idx === 0) {
+        const ns = engine.popBottom(stackId, { x: 0, y: 0 });
+        if (ns) startDrag(engine, ns.id, pe, boardRoot);
+        return;
+      }
+
       if (idx === topIdx) {
         const ns = engine.splitStack(stackId, topIdx, { x: 10, y: 0 });
         if (ns) startDrag(engine, ns.id, pe, boardRoot);

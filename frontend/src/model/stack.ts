@@ -133,4 +133,5 @@ export class StackEntity extends Entity {
     if (cs.length <= 1) return [cs.slice()];
     return cs.map((c) => [c]);
   }
+
 }

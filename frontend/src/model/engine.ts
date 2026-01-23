@@ -102,4 +102,25 @@ export class Engine {
     }
     return created;
   }
+
+  /**
+   * Pop the bottom card off a stack and create a new 1-card stack nearby.
+   * If the original stack becomes empty, remove it.
+   */
+  popBottom(stackId: StackId, offset: Point = { x: 0, y: 0 }) {
+    const s = this.stacks.get(stackId);
+    if (!s) return null;
+
+    const card = s.takeBottom();
+    if (!card) return null;
+
+    const origin = s.pos[0]();
+    const ns = this.createStack({ x: origin.x + offset.x, y: origin.y + offset.y }, [card]);
+
+    if (s.cards[0]().length === 0) {
+      this.removeStack(stackId);
+    }
+
+    return ns;
+  }
 }
