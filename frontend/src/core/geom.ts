@@ -1,5 +1,4 @@
-import { getPan } from "..//board/pan";
-import type { Point } from "../model/types";
+import type { Point, Pan } from "../model/types";
 
 export const GRID = 22;
 export const DOT_PHASE = 1;
@@ -14,11 +13,15 @@ export function boardRect(boardEl: HTMLElement) {
   return boardEl.getBoundingClientRect();
 }
 
-export function clientToBoard(clientX: number, clientY: number, boardRoot: HTMLElement): Point {
+// ✅ pure: no getPan() inside
+export function clientToBoard(
+  clientX: number,
+  clientY: number,
+  boardRoot: HTMLElement,
+  pan: Pan
+): Point {
   const br = boardRoot.getBoundingClientRect();
   const localX = clientX - br.left;
   const localY = clientY - br.top;
-
-  const pan = getPan();
   return { x: localX - pan.x, y: localY - pan.y };
 }

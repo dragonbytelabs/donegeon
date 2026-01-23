@@ -29,7 +29,7 @@ func Board() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid h-full w-full grid-rows-[48px_1fr]\"><header class=\"flex items-center justify-between border-b border-border bg-card/60 px-3 backdrop-blur\"><div class=\"flex items-center gap-2\"><button id=\"sidebarToggle\" class=\"rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent\" type=\"button\">Sidebar</button><div class=\"text-sm font-semibold\">Cleartify Playground</div></div><div class=\"text-xs text-muted-foreground\">Drag stacks • Merge • Shift+Drag split • Unstack button</div></header><div class=\"grid h-full w-full grid-cols-[260px_1fr]\" id=\"appShell\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid h-full w-full grid-rows-[48px_1fr]\"><header class=\"flex items-center justify-between border-b border-border bg-card/60 px-3 backdrop-blur\"><div class=\"flex items-center gap-2\"><button id=\"sidebarToggle\" class=\"rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent\" type=\"button\">Sidebar</button><div class=\"text-sm font-semibold\">Cleartify Playground</div></div><div class=\"text-xs text-muted-foreground\">Drag stacks • Merge • Shift+Drag split • Unstack button</div></header><div id=\"appShell\" class=\"grid h-full w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr]\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -37,7 +37,7 @@ func Board() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div id=\"sidebarBackdrop\" class=\"fixed inset-0 z-40 hidden bg-black/50 md:hidden\"></div><main class=\"relative h-full w-full overflow-hidden\"><div id=\"boardRoot\" class=\"relative h-full w-full dotted-field\"><div id=\"board\" class=\"absolute inset-0\"></div><div class=\"pointer-events-none absolute bottom-4 left-4\"><div class=\"pointer-events-auto rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur\"><b class=\"text-foreground\">Drag</b> stacks. Drop onto another stack to merge. <span class=\"mx-2 opacity-50\">•</span> <b class=\"text-foreground\">Shift+Drag</b> split from middle.</div></div></div></main></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div id=\"sidebarBackdrop\" class=\"fixed inset-0 z-40 hidden bg-black/50 md:hidden\"></div><main class=\"relative h-full w-full min-w-0 overflow-hidden md:col-start-2\"><div id=\"boardRoot\" class=\"relative h-full w-full min-w-0 dotted-field\"><div id=\"board\" class=\"absolute inset-0\"></div><div class=\"pointer-events-none absolute bottom-4 left-4\"><div class=\"pointer-events-auto rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur\"><b class=\"text-foreground\">Drag</b> stacks. Drop onto another stack to merge. <span class=\"mx-2 opacity-50\">•</span> <b class=\"text-foreground\">Shift+Drag</b> split from middle.</div></div></div></main></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -1,4 +1,4 @@
-export type Pan = { x: number; y: number };
+import type { Pan } from "../model/types";
 
 let pan: Pan = { x: 0, y: 0 };
 
@@ -10,7 +10,6 @@ export function setPan(x: number, y: number) {
   pan = { x, y };
 }
 
-export function applyPan(boardEl: HTMLElement) {
-  const p = pan;
+export function applyPan(boardEl: HTMLElement, p: Pan = pan) {
   boardEl.style.transform = `translate(${p.x}px, ${p.y}px)`;
 }

@@ -18,15 +18,14 @@ templ Board() {
 				Drag stacks • Merge • Shift+Drag split • Unstack button
 			</div>
 		</header>
-
-		<div class="grid h-full w-full grid-cols-[260px_1fr]" id="appShell">
+		<div id="appShell" class="grid h-full w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr]">
 			@Sidebar()
 			<div
 				id="sidebarBackdrop"
 				class="fixed inset-0 z-40 hidden bg-black/50 md:hidden"
 			></div>
-			<main class="relative h-full w-full overflow-hidden">
-				<div id="boardRoot" class="relative h-full w-full dotted-field">
+			<main class="relative h-full w-full min-w-0 overflow-hidden md:col-start-2">
+				<div id="boardRoot" class="relative h-full w-full min-w-0 dotted-field">
 					<div id="board" class="absolute inset-0"></div>
 
 					<div class="pointer-events-none absolute bottom-4 left-4">

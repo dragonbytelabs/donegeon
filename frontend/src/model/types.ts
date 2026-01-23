@@ -67,3 +67,5 @@ export type Mounted = {
   node: HTMLElement;
   dispose: () => void;
 };
+
+export type Pan = { x: number; y: number };
