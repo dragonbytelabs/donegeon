@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const engine = new Engine();
 
   mountBoard(engine, boardEl);
-  initShell();
+  initShell(engine, boardRoot);
   bindMobilePan(boardRoot, boardEl);
   bindBoardInput(engine, boardRoot, boardEl);
   bindLongPressMenu(engine, document.getElementById("boardRoot")!);
