@@ -3,12 +3,15 @@ import { uid } from "../core/ids";
 import type { Point, StackId } from "./types";
 import { StackEntity } from "./stack";
 import type { CardEntity } from "./card";
+import { Emitter } from "../core/emitter";
+import type { EngineEvent } from "./event";
+
 
 export class Engine {
   stacks = new Map<StackId, StackEntity>();
-
-  // reactive list for mounting/unmounting stack views
   stackIds: Signal<StackId[]> = createSignal<StackId[]>([]);
+
+  events = new Emitter<EngineEvent>();
 
   private z = 10;
   nextZ() {
@@ -23,12 +26,14 @@ export class Engine {
   addStack(s: StackEntity) {
     this.stacks.set(s.id, s);
     this.stackIds[1]((prev) => [...prev, s.id]);
+    this.events.emit({ type: "stack.created", stackId: s.id, pos: s.pos[0]() });
   }
 
   removeStack(id: StackId) {
     if (!this.stacks.has(id)) return;
     this.stacks.delete(id);
     this.stackIds[1]((prev) => prev.filter((x) => x !== id));
+    this.events.emit({ type: "stack.removed", stackId: id });
   }
 
   createStack(pos: Point, cards: CardEntity[] = []) {
@@ -64,6 +69,7 @@ export class Engine {
       { x: p.x + offset.x, y: p.y + offset.y },
       pulled,
     );
+    this.events.emit({ type: "stack.split", sourceId: stackId, newId: ns.id, index });
     return ns;
   }
 
@@ -80,6 +86,7 @@ export class Engine {
     target.mergeFrom(source);
     this.removeStack(sourceId);
     this.bringToFront(targetId);
+    this.events.emit({ type: "stack.merged", targetId, sourceId });
   }
 
   /**
@@ -100,6 +107,11 @@ export class Engine {
       const pos = positions[i] ?? s.pos[0]();
       created.push(this.createStack(pos, bundles[i]));
     }
+    this.events.emit({
+      type: "stack.unstacked",
+      sourceId: stackId,
+      createdIds: created.map((x) => x.id),
+    });
     return created;
   }
 
@@ -120,6 +132,11 @@ export class Engine {
     if (s.cards[0]().length === 0) {
       this.removeStack(stackId);
     }
+
+    this.events.emit({
+      type: "stack.pop",
+      sourceId: stackId,
+    });
 
     return ns;
   }
