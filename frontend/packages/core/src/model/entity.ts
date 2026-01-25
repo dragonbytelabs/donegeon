@@ -5,4 +5,3 @@ export abstract class Entity {
 }
 
 
-

@@ -1,4 +1,5 @@
 import { uid } from "../core/ids";
+import { assert } from "../core/assert";
 import { CardEntity } from "./card";
 import type { CardDef, CardDefId } from "./types";
 
@@ -15,7 +16,7 @@ export class Deck {
 
   getDef(id: CardDefId) {
     const d = this.defs.get(id);
-    if (!d) throw new Error(`Unknown CardDef: ${id}`);
+    assert(d, `Deck.getDef: unknown CardDef: ${id}`);
     return d;
   }
 
@@ -28,6 +29,5 @@ export class Deck {
     return new CardEntity(uid("card"), def, data);
   }
 }
-
 
 

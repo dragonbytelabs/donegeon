@@ -1,4 +1,5 @@
 export * from "./core/runtime";
+export * from "./core/assert";
 export * from "./core/reactivity";
 export * from "./core/ids";
 export * from "./core/emitter";
@@ -11,7 +12,5 @@ export * from "./model/stack";
 export * from "./model/engine";
 export * from "./model/deck";
 export * from "./model/events";
-
-
 
 

@@ -5,7 +5,7 @@ export class CardEntity extends Entity {
   constructor(
     id: CardId,
     public readonly def: CardDef,
-    public data: CardData = {},
+    public data: CardData = {}
   ) {
     super(id);
   }
@@ -24,6 +24,5 @@ export class CardEntity extends Entity {
     return this.def.skin;
   }
 }
-
 
 
