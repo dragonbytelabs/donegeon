@@ -1,6 +1,5 @@
-import type { CardDef } from "./types";
-import { uid } from "../core/ids";
-import { CardEntity } from "./card";
+import type { CardDef, CardEntity } from "@cleartify/core";
+import { uid } from "@cleartify/core";
 
 export const workflowDefs: Record<string, CardDef> = {
   // Event / Trigger

@@ -4,7 +4,7 @@ import type { Point, StackId } from "./types";
 import { StackEntity } from "./stack";
 import type { CardEntity } from "./card";
 import { Emitter } from "../core/emitter";
-import type { EngineEvent } from "./event";
+import type { EngineEvent } from "./events";
 
 
 export class Engine {
@@ -141,3 +141,6 @@ export class Engine {
     return ns;
   }
 }
+
+
+

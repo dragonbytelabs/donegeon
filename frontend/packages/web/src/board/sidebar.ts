@@ -1,7 +1,7 @@
 // frontend/src/board/sidebar.ts
-import type { Engine } from "../model/engine";
-import { spawn } from "../model/catalog";
-import { clientToBoard, snapToGrid } from "../core/geom";
+import type { Engine } from "@cleartify/core";
+import { spawn, snapToGrid } from "@cleartify/core";
+import { clientToBoard } from "./geom.dom";
 import { getPan } from "./pan";
 
 type SpawnDrag = {

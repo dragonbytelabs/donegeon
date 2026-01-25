@@ -9,19 +9,20 @@ export function snapToGrid(x: number, y: number) {
   return { x: sx, y: sy };
 }
 
-export function boardRect(boardEl: HTMLElement) {
-  return boardEl.getBoundingClientRect();
-}
-
-// ✅ pure: no getPan() inside
-export function clientToBoard(
+/**
+ * DOM-free conversion helper.
+ * Pass in the board root's client rect explicitly (from the web adapter).
+ */
+export function clientToBoardFromRect(
   clientX: number,
   clientY: number,
-  boardRoot: HTMLElement,
+  rootRect: { left: number; top: number },
   pan: Pan
 ): Point {
-  const br = boardRoot.getBoundingClientRect();
-  const localX = clientX - br.left;
-  const localY = clientY - br.top;
+  const localX = clientX - rootRect.left;
+  const localY = clientY - rootRect.top;
   return { x: localX - pan.x, y: localY - pan.y };
 }
+
+
+

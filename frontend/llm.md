@@ -1,0 +1,895 @@
+# LLM Context Pack — @cleartify/core (Source of Truth)
+
+## What this file is
+This `llm.md` is a **single-file mirror** of the `packages/core/src` TypeScript source tree for the monorepo.
+It exists so an LLM (or human) can review, modify, and regenerate the core library **without losing structure**.
+
+- Each section header `# path/to/file.ts` maps to a real file relative to `packages/core/src`.
+- The code block under that header is the exact file contents.
+- This file is intended to be **round-trip safe** with:
+  - `combine-llm.sh` (source tree → llm.md)
+  - `reverse-llm.sh` (llm.md → source tree)
+
+**Rule:** If you edit code in this document, keep the header paths and triple-backtick fences intact so reverse-combine can reconstruct the tree exactly.
+
+## What @cleartify/core is
+`@cleartify/core` is a **platform-agnostic simulation + data model** for a Stacklands-style card/stack system.
+It is designed to be reused by:
+- **Cleartify** (drag/drop workflow builder: events, agents, rules, integrations, actions, memory)
+- **Donegeon** (card-stack-based task manager game)
+
+This package intentionally contains **no DOM, no browser APIs, no React, no platform UI code**.
+Rendering, input handling, panning, context menus, and animations live in adapters (e.g. `@cleartify/web`) that call into this core.
+
+## Responsibilities (core vs adapters)
+Core MUST:
+- Define the domain model: `CardEntity`, `StackEntity`, `Engine`, `Deck`, and shared types.
+- Own mutation rules for stacks: split, merge, unstack, pop bottom/top, take ranges.
+- Provide deterministic behavior where possible.
+- Emit domain events (`Engine.events`) for adapters to react to.
+- Use minimal dependencies (currently: `immer` only; keep it that way unless absolutely necessary).
+
+Adapters (web/mobile) MUST:
+- Handle input (pointer/touch gestures, long-press menu, drag thresholds).
+- Handle rendering (DOM/canvas/native views).
+- Handle panning/zooming and screen coordinate conversion.
+- Handle animations (wiggle/relax), audio, ads, persistence, networking, etc.
+
+## Core invariants and design constraints
+These are non-negotiable unless explicitly redesigning the system:
+- A `StackEntity.cards` array is ordered **bottom → top** (index 0 is bottom, last index is top).
+- `Engine` is the authoritative owner of stacks and stack IDs.
+- `Engine.stackIds` is the reactive list of stack ordering for renderers.
+- All state changes that affect UI should be observable through Signals and/or emitted events.
+- Prefer **small functions**, explicit control flow, and defensive checks.
+- Avoid hidden side effects and avoid tight coupling to UI frameworks.
+
+## How to change this project safely (LLM instructions)
+When updating code:
+1. Keep changes minimal and local.
+2. Preserve public API stability unless versioning is updated.
+3. Add/maintain invariants:
+   - validate indices
+   - avoid off-by-one bugs
+   - handle empty stacks correctly
+4. Prefer adding new helpers rather than introducing complex abstractions.
+5. If you add a new file under `packages/core/src`, you MUST also add it to this `llm.md` with:
+   - a new `# relative/path.ts` section header
+   - a fenced code block with the complete file contents
+
+## Build expectations
+`@cleartify/core` is TypeScript, ESM, and is meant to compile cleanly in both browser-bundled and Node tooling contexts.
+Avoid direct usage of DOM globals inside core.
+If randomness/UUID is needed, keep it injectable or ensure the environment supports it.
+
+## Current scope
+This snapshot includes:
+- a tiny signal/reactivity system (microtask-batched)
+- an event emitter
+- geometry helpers that are DOM-free
+- the card/stack engine + events
+- a simple Deck to spawn card instances from defs
+
+Anything UI-facing (DOM nodes, pointer events, menus, animations) belongs outside core.
+
+<!-- LLM_HEADER_END -->
+
+# core/emitter.ts
+
+```ts
+import { getRuntime } from "./runtime";
+
+export type Unsubscribe = () => void;
+
+export class Emitter<T> {
+  private subs = new Set<(event: T) => void>();
+
+  on(fn: (event: T) => void): Unsubscribe {
+    this.subs.add(fn);
+    return () => this.subs.delete(fn);
+  }
+
+  once(fn: (event: T) => void): Unsubscribe {
+    const off = this.on((e) => {
+      off();
+      fn(e);
+    });
+    return off;
+  }
+
+  emit(event: T) {
+    const errors: unknown[] = [];
+    for (const fn of Array.from(this.subs)) {
+      try {
+        fn(event);
+      } catch (err) {
+        errors.push(err);
+      }
+    }
+    if (errors.length) {
+      // log + throw to avoid “silent corruption”
+      getRuntime().logError("Emitter handler error(s):", errors);
+      throw new AggregateError(errors, "Emitter emit() handler error(s)");
+    }
+  }
+
+  clear() {
+    this.subs.clear();
+  }
+
+  get size() {
+    return this.subs.size;
+  }
+}
+
+
+
+```
+
+# core/geom.ts
+
+```ts
+import type { Point, Pan } from "../model/types";
+
+export const GRID = 22;
+export const DOT_PHASE = 1;
+
+export function snapToGrid(x: number, y: number) {
+  const sx = Math.round((x - DOT_PHASE) / GRID) * GRID + DOT_PHASE;
+  const sy = Math.round((y - DOT_PHASE) / GRID) * GRID + DOT_PHASE;
+  return { x: sx, y: sy };
+}
+
+/**
+ * DOM-free conversion helper.
+ * Pass in the board root's client rect explicitly (from the web adapter).
+ */
+export function clientToBoardFromRect(
+  clientX: number,
+  clientY: number,
+  rootRect: { left: number; top: number },
+  pan: Pan
+): Point {
+  const localX = clientX - rootRect.left;
+  const localY = clientY - rootRect.top;
+  return { x: localX - pan.x, y: localY - pan.y };
+}
+
+
+```
+
+# core/ids.ts
+
+```ts
+import { getRuntime } from "./runtime";
+
+export type EntityId = string;
+
+export function uid(prefix: string): EntityId {
+  const { randomUUID } = getRuntime();
+  return `${prefix}_${randomUUID().slice(0, 8)}`;
+}
+
+
+```
+
+# core/reactivity.ts
+
+```ts
+import { getRuntime } from "./runtime";
+
+export type Accessor<T> = () => T;
+export type Setter<T> = (value: T | ((prev: T) => T)) => T;
+export type Signal<T> = [Accessor<T>, Setter<T>];
+
+export type CleanupFn = () => void;
+export type Disposer = () => void;
+
+type Computation = {
+  fn: () => void;
+  deps: Set<SignalImpl<any>>;
+  cleanups: CleanupFn[];
+  scheduled: boolean;
+  disposed: boolean;
+};
+
+type SignalImpl<T> = {
+  value: T;
+  observers: Set<Computation>;
+  equals?: (a: T, b: T) => boolean;
+};
+
+let Current: Computation | null = null;
+
+// --- scheduler (microtask-batched) ---
+const queue = new Set<Computation>();
+let flushing = false;
+
+function schedule(c: Computation) {
+  if (c.disposed || c.scheduled) return;
+  c.scheduled = true;
+  queue.add(c);
+  if (!flushing) {
+    flushing = true;
+    getRuntime().queueMicrotask(flush);
+  }
+}
+
+function flush() {
+  try {
+    for (const c of Array.from(queue)) {
+      queue.delete(c);
+      c.scheduled = false;
+      if (c.disposed) continue;
+      run(c);
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+let batchDepth = 0;
+function flushIfNeeded() {
+  if (batchDepth === 0 && queue.size > 0 && !flushing) {
+    flushing = true;
+    getRuntime().queueMicrotask(flush);
+  }
+}
+
+export function batch(fn: () => void) {
+  batchDepth++;
+  try {
+    fn();
+  } finally {
+    batchDepth--;
+    flushIfNeeded();
+  }
+}
+
+// --- core execution + cleanup ---
+function cleanupComputation(c: Computation) {
+  for (const dep of c.deps) dep.observers.delete(c);
+  c.deps.clear();
+
+  for (const cl of c.cleanups) {
+    try {
+      cl();
+    } catch (err) {
+      getRuntime().logError("cleanup error:", err);
+    }
+  }
+  c.cleanups.length = 0;
+}
+
+function run(c: Computation) {
+  cleanupComputation(c);
+  const prev = Current;
+  Current = c;
+  try {
+    c.fn();
+  } finally {
+    Current = prev;
+  }
+}
+
+function createComputation(fn: () => void): Computation {
+  return { fn, deps: new Set(), cleanups: [], scheduled: false, disposed: false };
+}
+
+// --- public API ---
+export function createSignal<T>(
+  initial: T,
+  opts?: { equals?: (a: T, b: T) => boolean }
+): Signal<T> {
+  const s: SignalImpl<T> = { value: initial, observers: new Set(), equals: opts?.equals };
+
+  const read: Accessor<T> = () => {
+    if (Current && !Current.disposed) {
+      s.observers.add(Current);
+      Current.deps.add(s);
+    }
+    return s.value;
+  };
+
+  const write: Setter<T> = (next) => {
+    const v = typeof next === "function" ? (next as (p: T) => T)(s.value) : next;
+    const same = s.equals ? s.equals(s.value, v) : Object.is(s.value, v);
+    if (same) return s.value;
+
+    s.value = v;
+    for (const obs of s.observers) schedule(obs);
+    if (batchDepth === 0) flushIfNeeded();
+    return s.value;
+  };
+
+  return [read, write];
+}
+
+function disposeComputation(c: Computation) {
+  if (c.disposed) return;
+  c.disposed = true;
+  queue.delete(c);
+  cleanupComputation(c);
+}
+
+export function createEffect(fn: () => void): Disposer {
+  const c = createComputation(fn);
+  run(c);
+
+  const dispose: Disposer = () => disposeComputation(c);
+
+  // If we're inside a root, tie this effect to that root.
+  const rootAtCreation = CurrentRoot;
+  if (rootAtCreation) rootAtCreation.disposers.add(dispose);
+
+  return () => {
+    if (rootAtCreation) rootAtCreation.disposers.delete(dispose);
+    dispose();
+  };
+}
+
+export function createMemo<T>(
+  fn: () => T,
+  initial?: T,
+  opts?: { equals?: (a: T, b: T) => boolean }
+): Accessor<T> {
+  const [get, set] = createSignal<T>(initial as T, opts);
+  createEffect(() => set(fn()));
+  return get;
+}
+
+export function onCleanup(fn: CleanupFn) {
+  if (!Current || Current.disposed) {
+    throw new Error("onCleanup must be called inside createEffect/createRoot scope");
+  }
+  Current.cleanups.push(fn);
+}
+
+export function untrack<T>(fn: () => T): T {
+  const prev = Current;
+  Current = null;
+  try {
+    return fn();
+  } finally {
+    Current = prev;
+  }
+}
+
+// --- Optional: root scope for disposal ---
+type RootScope = {
+  parent: RootScope | null;
+  disposers: Set<Disposer>;
+};
+
+let CurrentRoot: RootScope | null = null;
+
+export function createRoot<T>(fn: (dispose: Disposer) => T): T {
+  const parent = CurrentRoot;
+  const root: RootScope = { parent, disposers: new Set() };
+  CurrentRoot = root;
+
+  const dispose: Disposer = () => {
+    for (const d of Array.from(root.disposers)) {
+      try {
+        d();
+      } catch (err) {
+        getRuntime().logError("dispose error:", err);
+      }
+    }
+    root.disposers.clear();
+  };
+
+  try {
+    return fn(dispose);
+  } finally {
+    CurrentRoot = parent;
+  }
+}
+
+
+```
+
+# core/runtime.ts
+
+```ts
+export type Runtime = {
+  /** Crypto-grade UUID if available, else best-effort fallback. */
+  randomUUID: () => string;
+
+  /** Microtask scheduling (or a Promise fallback). */
+  queueMicrotask: (fn: () => void) => void;
+
+  /** Logging hook (can be replaced in production). */
+  logError: (...args: unknown[]) => void;
+};
+
+function fallbackUUID(): string {
+  // Best-effort fallback. For safety-critical identity, inject your own runtime.randomUUID.
+  const t = Date.now().toString(16);
+  const r = Math.floor(Math.random() * 1e16).toString(16);
+  return `${t}-${r}`.slice(0, 36);
+}
+
+const defaultRuntime: Runtime = {
+  randomUUID: () => {
+    const c = (globalThis as any).crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    return fallbackUUID();
+  },
+  queueMicrotask: (fn) => {
+    const qm = (globalThis as any).queueMicrotask as undefined | ((f: () => void) => void);
+    if (qm) return qm(fn);
+    Promise.resolve().then(fn);
+  },
+  logError: (...args) => {
+    // eslint-disable-next-line no-console
+    (globalThis as any).console?.error?.(...args);
+  },
+};
+
+let runtime: Runtime = defaultRuntime;
+
+export function getRuntime(): Runtime {
+  return runtime;
+}
+
+/**
+ * Inject a runtime from the host platform (web, node, react-native, etc).
+ * This is how core stays DOM-free.
+ */
+export function setRuntime(next: Partial<Runtime>) {
+  runtime = { ...runtime, ...next };
+}
+
+
+```
+
+# index.ts
+
+```ts
+export * from "./core/runtime";
+export * from "./core/reactivity";
+export * from "./core/ids";
+export * from "./core/emitter";
+export * from "./core/geom";
+
+export * from "./model/types";
+export * from "./model/entity";
+export * from "./model/card";
+export * from "./model/stack";
+export * from "./model/engine";
+export * from "./model/deck";
+export * from "./model/events";
+
+
+
+```
+
+# model/card.ts
+
+```ts
+import { Entity } from "./entity";
+import type { CardData, CardDef, CardId } from "./types";
+
+export class CardEntity extends Entity {
+  constructor(
+    id: CardId,
+    public readonly def: CardDef,
+    public data: CardData = {},
+  ) {
+    super(id);
+  }
+
+  // convenience helpers
+  get title() {
+    return this.def.title;
+  }
+  get icon() {
+    return this.def.icon;
+  }
+  get kind() {
+    return this.def.kind;
+  }
+  get skinClass() {
+    return this.def.skin;
+  }
+}
+
+
+```
+
+# model/deck.ts
+
+```ts
+import { uid } from "../core/ids";
+import { CardEntity } from "./card";
+import type { CardDef, CardDefId } from "./types";
+
+export class Deck {
+  private defs = new Map<CardDefId, CardDef>();
+
+  constructor(initial: CardDef[] = []) {
+    for (const d of initial) this.defs.set(d.id, d);
+  }
+
+  addDef(def: CardDef) {
+    this.defs.set(def.id, def);
+  }
+
+  getDef(id: CardDefId) {
+    const d = this.defs.get(id);
+    if (!d) throw new Error(`Unknown CardDef: ${id}`);
+    return d;
+  }
+
+  allDefs(): CardDef[] {
+    return Array.from(this.defs.values());
+  }
+
+  spawn(defId: CardDefId, data: Record<string, unknown> = {}) {
+    const def = this.getDef(defId);
+    return new CardEntity(uid("card"), def, data);
+  }
+}
+
+
+```
+
+# model/engine.ts
+
+```ts
+import { createSignal, type Signal } from "../core/reactivity";
+import { uid } from "../core/ids";
+import type { Point, StackId } from "./types";
+import { StackEntity } from "./stack";
+import type { CardEntity } from "./card";
+import { Emitter } from "../core/emitter";
+import type { EngineEvent } from "./events";
+
+
+export class Engine {
+  stacks = new Map<StackId, StackEntity>();
+  stackIds: Signal<StackId[]> = createSignal<StackId[]>([]);
+
+  events = new Emitter<EngineEvent>();
+
+  private z = 10;
+  nextZ() {
+    this.z++;
+    return this.z;
+  }
+
+  getStack(id: StackId): StackEntity | undefined {
+    return this.stacks.get(id);
+  }
+
+  addStack(s: StackEntity) {
+    this.stacks.set(s.id, s);
+    this.stackIds[1]((prev) => [...prev, s.id]);
+    this.events.emit({ type: "stack.created", stackId: s.id, pos: s.pos[0]() });
+  }
+
+  removeStack(id: StackId) {
+    if (!this.stacks.has(id)) return;
+    this.stacks.delete(id);
+    this.stackIds[1]((prev) => prev.filter((x) => x !== id));
+    this.events.emit({ type: "stack.removed", stackId: id });
+  }
+
+  createStack(pos: Point, cards: CardEntity[] = []) {
+    const s = new StackEntity(uid("stack"), pos, cards);
+    s.z[1](this.nextZ());
+    this.addStack(s);
+    return s;
+  }
+
+  bringToFront(stackId: StackId) {
+    const s = this.stacks.get(stackId);
+    if (!s) return;
+    s.z[1](this.nextZ());
+  }
+
+  /**
+   * Split a stack into two stacks at index:
+   * existing keeps [0..index-1], new gets [index..end]
+   */
+  splitStack(
+    stackId: StackId,
+    index: number,
+    offset: Point = { x: 12, y: 12 },
+  ) {
+    const s = this.stacks.get(stackId);
+    if (!s) return null;
+
+    const pulled = s.splitFrom(index);
+    if (!pulled) return null;
+
+    const p = s.pos[0]();
+    const ns = this.createStack(
+      { x: p.x + offset.x, y: p.y + offset.y },
+      pulled,
+    );
+    this.events.emit({ type: "stack.split", sourceId: stackId, newId: ns.id, index });
+    return ns;
+  }
+
+  /**
+   * Merge source stack into target stack, then remove source.
+   */
+  mergeStacks(targetId: StackId, sourceId: StackId) {
+    if (targetId === sourceId) return;
+
+    const target = this.stacks.get(targetId);
+    const source = this.stacks.get(sourceId);
+    if (!target || !source) return;
+
+    target.mergeFrom(source);
+    this.removeStack(sourceId);
+    this.bringToFront(targetId);
+    this.events.emit({ type: "stack.merged", targetId, sourceId });
+  }
+
+  /**
+   * Unstack: remove stack, create N single-card stacks around it.
+   * (positions are decided by caller or a helper you add later)
+   */
+  unstack(stackId: StackId, positions: Point[]) {
+    const s = this.stacks.get(stackId);
+    if (!s) return [];
+
+    const bundles = s.unstackIntoSingles();
+    if (bundles.length <= 1) return [];
+
+    this.removeStack(stackId);
+
+    const created: StackEntity[] = [];
+    for (let i = 0; i < bundles.length; i++) {
+      const pos = positions[i] ?? s.pos[0]();
+      created.push(this.createStack(pos, bundles[i]));
+    }
+    this.events.emit({
+      type: "stack.unstacked",
+      sourceId: stackId,
+      createdIds: created.map((x) => x.id),
+    });
+    return created;
+  }
+
+  /**
+   * Pop the bottom card off a stack and create a new 1-card stack nearby.
+   * If the original stack becomes empty, remove it.
+   */
+  popBottom(stackId: StackId, offset: Point = { x: 0, y: 0 }) {
+    const s = this.stacks.get(stackId);
+    if (!s) return null;
+
+    const card = s.takeBottom();
+    if (!card) return null;
+
+    const origin = s.pos[0]();
+    const ns = this.createStack({ x: origin.x + offset.x, y: origin.y + offset.y }, [card]);
+
+    if (s.cards[0]().length === 0) {
+      this.removeStack(stackId);
+    }
+
+    this.events.emit({
+      type: "stack.pop",
+      sourceId: stackId,
+    });
+
+    return ns;
+  }
+}
+
+
+```
+
+# model/entity.ts
+
+```ts
+import type { EntityId } from "../core/ids";
+
+export abstract class Entity {
+  constructor(public readonly id: EntityId) {}
+}
+
+
+```
+
+# model/events.ts
+
+```ts
+import type { Point, StackId } from "./types";
+
+export type EngineEvent =
+  | { type: "stack.created"; stackId: StackId; pos: Point }
+  | { type: "stack.removed"; stackId: StackId }
+  | { type: "stack.merged"; targetId: StackId; sourceId: StackId }
+  | { type: "stack.split"; sourceId: StackId; newId: StackId; index: number }
+  | { type: "stack.unstacked"; sourceId: StackId; createdIds: StackId[] }
+  | { type: "stack.pop"; sourceId: StackId };
+
+
+```
+
+# model/stack.ts
+
+```ts
+import { produce } from "immer";
+import { Entity } from "./entity";
+import { createSignal, type Signal } from "../core/reactivity";
+import type { Point, StackId } from "./types";
+import type { CardEntity } from "./card";
+
+export class StackEntity extends Entity {
+  pos: Signal<Point>;
+  cards: Signal<CardEntity[]>;
+  z: Signal<number>;
+
+  constructor(id: StackId, initialPos: Point, initialCards: CardEntity[] = []) {
+    super(id);
+    this.pos = createSignal<Point>(initialPos);
+    this.cards = createSignal<CardEntity[]>(initialCards);
+    this.z = createSignal<number>(1);
+  }
+
+  // ---------- Access helpers ----------
+  get size() {
+    return this.cards[0]().length;
+  }
+
+  topIndex() {
+    return this.size - 1;
+  }
+
+  topCard(): CardEntity | undefined {
+    const cs = this.cards[0]();
+    return cs[cs.length - 1];
+  }
+
+  bottomCard(): CardEntity | undefined {
+    const cs = this.cards[0]();
+    return cs[0];
+  }
+
+  // ---------- Mutations (Immer-backed) ----------
+  setCards(next: CardEntity[]) {
+    this.cards[1](next);
+  }
+
+  /** Remove and return top card. */
+  takeTop(): CardEntity | null {
+    const before = this.cards[0]();
+    if (before.length === 0) return null;
+
+    let taken: CardEntity | null = null;
+    this.cards[1](
+      produce(before, (draft) => {
+        taken = draft.pop() ?? null;
+      }),
+    );
+    return taken;
+  }
+
+  /** Remove and return bottom card. */
+  takeBottom(): CardEntity | null {
+    const before = this.cards[0]();
+    if (before.length === 0) return null;
+
+    let taken: CardEntity | null = null;
+    this.cards[1](
+      produce(before, (draft) => {
+        taken = draft.shift() ?? null;
+      }),
+    );
+    return taken;
+  }
+
+  /**
+   * Remove and return a range [start..end) (bottom-inclusive range in the array).
+   * Example: cards [1,2,3,4,5], takeRange(2,5) => returns [3,4,5], stack becomes [1,2]
+   */
+  takeRange(start: number, endExclusive: number): CardEntity[] | null {
+    const before = this.cards[0]();
+    if (start < 0 || endExclusive > before.length || start >= endExclusive)
+      return null;
+
+    let out: CardEntity[] = [];
+    this.cards[1](
+      produce(before, (draft) => {
+        out = draft.splice(start, endExclusive - start);
+      }),
+    );
+    return out;
+  }
+
+  /**
+   * Split stack in place at `index`:
+   * [1,2,3,4,5], index=2 => this becomes [1,2], returns [3,4,5]
+   *
+   * This is your "shift-drag 3" behavior.
+   */
+  splitFrom(index: number): CardEntity[] | null {
+    const before = this.cards[0]();
+    if (index <= 0 || index >= before.length) return null;
+
+    let pulled: CardEntity[] = [];
+    this.cards[1](
+      produce(before, (draft) => {
+        pulled = draft.splice(index);
+      }),
+    );
+
+    return pulled;
+  }
+
+  /** Merge another stack's cards on top of this stack. */
+  mergeFrom(other: StackEntity) {
+    const a = this.cards[0]();
+    const b = other.cards[0]();
+    if (b.length === 0) return;
+
+    this.cards[1](
+      produce(a, (draft) => {
+        draft.push(...b);
+      }),
+    );
+  }
+
+  /** True if more than 1 card. */
+  isStacked() {
+    return this.size > 1;
+  }
+
+  /**
+   * Used by "unstack" -> create N single-card stacks.
+   * Returns arrays of 1 card each (does not create stacks; engine does that).
+   */
+  unstackIntoSingles(): CardEntity[][] {
+    const cs = this.cards[0]();
+    if (cs.length <= 1) return [cs.slice()];
+    return cs.map((c) => [c]);
+  }
+
+}
+
+
+```
+
+# model/types.ts
+
+```ts
+import type { EntityId } from "../core/ids";
+
+export type Point = { x: number; y: number };
+export type Pan = { x: number; y: number };
+
+export type CardKind =
+  | "event"
+  | "agent"
+  | "rule"
+  | "integration"
+  | "action"
+  | "memory"
+  | "resource"
+  | "blank";
+
+export type CardDefId = string;
+
+export type CardDef = {
+  id: CardDefId;
+  kind: CardKind;
+  title: string;
+  icon: string;
+  skin: string;
+  leftBadge?: string;
+  rightBadge?: string;
+};
+
+export type CardData = Record<string, unknown>;
+
+export type StackId = EntityId;
+export type CardId = EntityId;
+
+```

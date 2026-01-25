@@ -1,3 +1,5 @@
+import { getRuntime } from "./runtime";
+
 export type Unsubscribe = () => void;
 
 export class Emitter<T> {
@@ -17,8 +19,19 @@ export class Emitter<T> {
   }
 
   emit(event: T) {
-    // copy to avoid issues if handlers unsubscribe while iterating
-    for (const fn of Array.from(this.subs)) fn(event);
+    const errors: unknown[] = [];
+    for (const fn of Array.from(this.subs)) {
+      try {
+        fn(event);
+      } catch (err) {
+        errors.push(err);
+      }
+    }
+    if (errors.length) {
+      // log + throw to avoid “silent corruption”
+      getRuntime().logError("Emitter handler error(s):", errors);
+      throw new AggregateError(errors, "Emitter emit() handler error(s)");
+    }
   }
 
   clear() {
@@ -29,3 +42,7 @@ export class Emitter<T> {
     return this.subs.size;
   }
 }
+
+
+
+

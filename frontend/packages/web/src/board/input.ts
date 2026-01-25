@@ -1,5 +1,6 @@
-import type { Engine } from "../model/engine";
-import { clientToBoard, snapToGrid } from "../core/geom";
+import type { Engine } from "@cleartify/core";
+import { snapToGrid } from "@cleartify/core";
+import { clientToBoard } from "./geom.dom";
 import { showContextMenu, hideContextMenu } from "./contextmenu";
 import { getPan, setPan, applyPan } from "./pan";
 import { unstackPositions, animateRelax } from "./physics";

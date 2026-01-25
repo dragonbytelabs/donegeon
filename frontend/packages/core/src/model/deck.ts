@@ -28,3 +28,6 @@ export class Deck {
     return new CardEntity(uid("card"), def, data);
   }
 }
+
+
+

@@ -21,6 +21,9 @@ export class CardEntity extends Entity {
     return this.def.kind;
   }
   get skinClass() {
-    return this.def.skinClass;
+    return this.def.skin;
   }
 }
+
+
+

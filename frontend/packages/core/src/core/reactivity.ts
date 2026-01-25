@@ -1,3 +1,5 @@
+import { getRuntime } from "./runtime";
+
 export type Accessor<T> = () => T;
 export type Setter<T> = (value: T | ((prev: T) => T)) => T;
 export type Signal<T> = [Accessor<T>, Setter<T>];
@@ -22,7 +24,6 @@ type SignalImpl<T> = {
 let Current: Computation | null = null;
 
 // --- scheduler (microtask-batched) ---
-
 const queue = new Set<Computation>();
 let flushing = false;
 
@@ -32,13 +33,12 @@ function schedule(c: Computation) {
   queue.add(c);
   if (!flushing) {
     flushing = true;
-    queueMicrotask(flush);
+    getRuntime().queueMicrotask(flush);
   }
 }
 
 function flush() {
   try {
-    // drain in insertion order
     for (const c of Array.from(queue)) {
       queue.delete(c);
       c.scheduled = false;
@@ -50,12 +50,11 @@ function flush() {
   }
 }
 
-// Allow explicit batching (optional; scheduler already batches by default)
 let batchDepth = 0;
 function flushIfNeeded() {
   if (batchDepth === 0 && queue.size > 0 && !flushing) {
     flushing = true;
-    queueMicrotask(flush);
+    getRuntime().queueMicrotask(flush);
   }
 }
 
@@ -70,19 +69,15 @@ export function batch(fn: () => void) {
 }
 
 // --- core execution + cleanup ---
-
 function cleanupComputation(c: Computation) {
-  // detach from deps
   for (const dep of c.deps) dep.observers.delete(c);
   c.deps.clear();
 
-  // run user cleanups
   for (const cl of c.cleanups) {
     try {
       cl();
     } catch (err) {
-      // best-effort; don't break reactivity if a cleanup throws
-      console.error("cleanup error:", err);
+      getRuntime().logError("cleanup error:", err);
     }
   }
   c.cleanups.length = 0;
@@ -100,30 +95,18 @@ function run(c: Computation) {
 }
 
 function createComputation(fn: () => void): Computation {
-  return {
-    fn,
-    deps: new Set(),
-    cleanups: [],
-    scheduled: false,
-    disposed: false,
-  };
+  return { fn, deps: new Set(), cleanups: [], scheduled: false, disposed: false };
 }
 
 // --- public API ---
-
 export function createSignal<T>(
   initial: T,
   opts?: { equals?: (a: T, b: T) => boolean }
 ): Signal<T> {
-  const s: SignalImpl<T> = {
-    value: initial,
-    observers: new Set(),
-    equals: opts?.equals,
-  };
+  const s: SignalImpl<T> = { value: initial, observers: new Set(), equals: opts?.equals };
 
   const read: Accessor<T> = () => {
     if (Current && !Current.disposed) {
-      // track: signal -> computation and computation -> signal
       s.observers.add(Current);
       Current.deps.add(s);
     }
@@ -132,29 +115,39 @@ export function createSignal<T>(
 
   const write: Setter<T> = (next) => {
     const v = typeof next === "function" ? (next as (p: T) => T)(s.value) : next;
-
     const same = s.equals ? s.equals(s.value, v) : Object.is(s.value, v);
     if (same) return s.value;
 
     s.value = v;
-
-    // notify observers
     for (const obs of s.observers) schedule(obs);
-
-    // if we are inside a manual batch, don't flush until batch ends;
-    // otherwise the microtask scheduler handles it.
     if (batchDepth === 0) flushIfNeeded();
-
     return s.value;
   };
 
   return [read, write];
 }
 
+function disposeComputation(c: Computation) {
+  if (c.disposed) return;
+  c.disposed = true;
+  queue.delete(c);
+  cleanupComputation(c);
+}
+
 export function createEffect(fn: () => void): Disposer {
   const c = createComputation(fn);
   run(c);
-  return () => disposeComputation(c);
+
+  const dispose: Disposer = () => disposeComputation(c);
+
+  // If we're inside a root, tie this effect to that root.
+  const rootAtCreation = CurrentRoot;
+  if (rootAtCreation) rootAtCreation.disposers.add(dispose);
+
+  return () => {
+    if (rootAtCreation) rootAtCreation.disposers.delete(dispose);
+    dispose();
+  };
 }
 
 export function createMemo<T>(
@@ -163,18 +156,7 @@ export function createMemo<T>(
   opts?: { equals?: (a: T, b: T) => boolean }
 ): Accessor<T> {
   const [get, set] = createSignal<T>(initial as T, opts);
-
-  const c = createComputation(() => {
-    // compute and write into inner signal
-    set(fn());
-  });
-
-  run(c);
-
-  // tie memo lifetime to whoever holds accessor (manual disposal pattern)
-  // If you need explicit disposal, wrap with createRoot below.
-  // For now, memo stays alive; this matches how you'll use it in your board.
-  // You can upgrade later with createRoot/owners.
+  createEffect(() => set(fn()));
   return get;
 }
 
@@ -195,23 +177,7 @@ export function untrack<T>(fn: () => T): T {
   }
 }
 
-function disposeComputation(c: Computation) {
-  if (c.disposed) return;
-  c.disposed = true;
-  queue.delete(c);
-  cleanupComputation(c);
-}
-
-// --- Optional: createRoot for scoped disposal (handy for DOM nodes) ---
-//
-// Usage:
-// const dispose = createRoot((dispose) => {
-//   createEffect(...);
-//   return dispose;
-// });
-// dispose(); // disposes all effects created inside root
-//
-// This is a lightweight owner-style scope (not full Solid owner graph, but good enough).
+// --- Optional: root scope for disposal ---
 type RootScope = {
   parent: RootScope | null;
   disposers: Set<Disposer>;
@@ -229,7 +195,7 @@ export function createRoot<T>(fn: (dispose: Disposer) => T): T {
       try {
         d();
       } catch (err) {
-        console.error("dispose error:", err);
+        getRuntime().logError("dispose error:", err);
       }
     }
     root.disposers.clear();
@@ -242,12 +208,5 @@ export function createRoot<T>(fn: (dispose: Disposer) => T): T {
   }
 }
 
-// Wrap createEffect so effects created inside a root are auto-disposed.
-export function createEffectInRoot(fn: () => void): Disposer {
-  const d = createEffect(fn);
-  if (CurrentRoot) CurrentRoot.disposers.add(d);
-  return () => {
-    if (CurrentRoot) CurrentRoot.disposers.delete(d);
-    d();
-  };
-}
+
+
