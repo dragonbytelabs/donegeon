@@ -29,7 +29,7 @@ func Board() templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid h-full w-full grid-rows-[48px_1fr]\"><header class=\"flex items-center justify-between border-b border-border bg-card/60 px-3 backdrop-blur\"><div class=\"flex items-center gap-2\"><button id=\"sidebarToggle\" class=\"rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent\" type=\"button\">Sidebar</button><div class=\"text-sm font-semibold\">Cleartify Playground</div></div><div class=\"text-xs text-muted-foreground\">Drag stacks • Merge • Shift+Drag split • Unstack button</div></header><div id=\"appShell\" class=\"grid h-full w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid h-full w-full grid-rows-[48px_1fr]\"><header class=\"flex items-center justify-between border-b border-border bg-card/60 px-3 backdrop-blur\"><div class=\"flex items-center gap-2\"><button id=\"sidebarToggle\" class=\"rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent\" type=\"button\">Sidebar</button><div class=\"text-sm font-semibold\">Donegeon Playground</div></div><div class=\"text-xs text-muted-foreground\">Drag stacks • Merge • Shift+Drag split • Unstack button</div></header><div id=\"appShell\" class=\"grid h-full w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr]\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
