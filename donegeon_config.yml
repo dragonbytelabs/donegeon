@@ -1,0 +1,706 @@
+# donegeon.config.yaml
+# Canonical gameplay/balance configuration (backend reads this; frontend never invents rules).
+# v0.2-ready: includes villagers, modifiers, resources, decks, loot tables, leveling, stamina/food, spawn rules.
+#
+# Conventions:
+# - Rates are per "day tick" unless specified.
+# - "rng_pool" entries use weights; backend uses seeded RNG for determinism.
+# - Times are seconds unless specified.
+# - All IDs are stable strings so saves can reference them.
+
+version: "0.2"
+seeded_rng:
+  enabled: true
+  # If true, same day+account+deck+open_index yields same draw results.
+  deterministic_deck_draws: true
+
+ui:
+  board:
+    grid_size: 20         # px; used for snap-to-grid + dot background spacing
+    card_width: 92        # px
+    card_height: 124      # px
+    stack_offset_y: 20    # px; vertical overlap between cards in a stack
+
+world:
+  day_tick:
+    max_zombies_spawn_per_day: 5
+    stamina_reset:
+      enabled: true
+      mode: "full" # full | partial
+    overdue_rules:
+      # When a task passes due date and is not completed.
+      zombie_spawn:
+        enabled: true
+        per_overdue_task: 1
+        cap_per_day: 5
+      penalties:
+        # Applied when an overdue zombie exists (or at tick when spawning)
+        deck_cost_multiplier_per_zombie: 0.05 # +5% cost per active zombie (stacking)
+        villager_fatigue_per_zombie: 0 # if you want passive fatigue, set >0
+    recurrence_rules:
+      # When recurring tasks are processed/spawned
+      consume_modifier_charges: true
+      spawn_if_due: true
+
+villagers:
+  defaults:
+    max_level: 10
+    base_max_stamina: 6
+    base_speed: 1.0 # affects gather/mine times via multipliers
+    tired:
+      enabled: true
+      # Example: if overrun_level is high, villagers can become tired for N days
+      trigger:
+        overrun_level_gte: 10
+      duration_days: 1
+      effects:
+        stamina_multiplier: 0.7
+        speed_multiplier: 0.85
+
+  leveling:
+    # XP is gained by completing tasks (and optionally by clearing zombies / gathering)
+    xp_sources:
+      complete_task:
+        base_xp: 10
+        # Optional: scale XP by task complexity/priority
+        by_priority:
+          none: 0
+          low: 0
+          medium: 2
+          high: 5
+      clear_zombie:
+        base_xp: 6
+      gather_resource_cycle:
+        base_xp: 2
+
+    # XP thresholds to reach each level (level 1 is starting level)
+    # Example: to go from level N to N+1, require thresholds[N]
+    thresholds:
+      1: 0
+      2: 40
+      3: 100
+      4: 180
+      5: 280
+      6: 400
+      7: 540
+      8: 700
+      9: 880
+      10: 1080
+
+    # On level up, player chooses 1 perk (backend validates)
+    choices_per_level: 1
+    perk_pool:
+      - id: "perk_stamina_plus_1"
+        label: "+1 max stamina"
+        apply:
+          max_stamina_add: 1
+
+      - id: "perk_speed_plus_10"
+        label: "+10% speed"
+        apply:
+          speed_multiplier_add: 0.10
+
+      - id: "perk_gather_efficiency"
+        label: "Gather efficiency (resource cycles +1 yield chance)"
+        apply:
+          gather_yield_bonus_chance: 0.10
+
+      - id: "perk_zombie_slayer"
+        label: "Zombie slayer (clearing costs -1 stamina)"
+        apply:
+          zombie_clear_stamina_cost_add: -1
+          min_zombie_clear_cost: 1
+
+  actions:
+    # Stamina costs for board interactions
+    assign_task:
+      stamina_cost: 0 # assignment itself is free; working consumes stamina
+    work_task:
+      stamina_cost: 1 # per "process/work" action
+    clear_zombie:
+      stamina_cost: 2
+      min_cost_after_perks: 1
+    gather_start:
+      stamina_cost: 1 # optional: cost to begin gathering cycle (or 0 if you prefer)
+    eat_food:
+      stamina_cost: 0
+
+tasks:
+  priorities:
+    # Maps to modifiers and loot multipliers.
+    levels: ["none", "low", "medium", "high"]
+    loot_bonus_by_priority:
+      none: 0.0
+      low: 0.05
+      medium: 0.10
+      high: 0.20
+
+  zones:
+    allowed: ["inbox", "live", "completed", "archived"]
+    default_zone: "inbox"
+
+  due_date:
+    # Grace period after due date before "overdue" triggers zombie spawn.
+    grace_hours: 0
+
+  recurrence:
+    # Recurrence types your engine supports
+    supported: ["daily", "weekly", "monthly"]
+    default_on_complete_reschedule: true
+
+  processing:
+    # If you have /api/tasks/process - define semantics here.
+    # e.g. "worked today" marks that the task progressed and consumes stamina.
+    worked_today_marks_progress: true
+    completion_requires_assigned_villager: true
+
+modifiers:
+  global_rules:
+    max_modifiers_per_task: 4
+    # Disallow multiple modifiers of same type on same task unless listed
+    allow_duplicate_types: false
+    duplicate_type_allowlist: [] # e.g. ["tag_stamp"]
+
+  types:
+    - id: "recurring_contract"
+      label: "Recurring Contract"
+      category: "schedule"
+      stack_rules:
+        attach_to: ["task"]
+        unique_per_task: true
+      charges:
+        mode: "finite" # finite | infinite
+        max_charges: 4
+        consume_on:
+          - "day_tick"
+          - "task_complete"
+        spent_behavior: "remove" # remove | salvageable | persist_spent
+      effects:
+        # Couples to recurrence engine
+        enable_recurrence: true
+        recurrence_source: "task_field_or_modifier"
+        if_task_has_recurrence_rule_use_it: true
+        default_rule_if_missing:
+          type: "weekly"
+          interval: 1
+
+    - id: "deadline_pin"
+      label: "Deadline Pin"
+      category: "deadline"
+      stack_rules:
+        attach_to: ["task"]
+        unique_per_task: true
+      charges:
+        mode: "infinite"
+        max_charges: 0
+        consume_on: []
+        spent_behavior: "persist_spent"
+      effects:
+        # Hardens due-date: no grace, stronger penalties
+        due_date_grace_override_hours: 0
+        overdue:
+          zombie_spawn_multiplier: 1.0
+          deck_cost_multiplier_bonus: 0.02 # extra +2% per overdue zombie sourced from pinned tasks
+
+    - id: "importance_seal"
+      label: "Importance Seal"
+      category: "priority"
+      stack_rules:
+        attach_to: ["task"]
+        unique_per_task: true
+      charges:
+        mode: "finite"
+        max_charges: 3
+        consume_on:
+          - "task_complete"
+        spent_behavior: "salvageable"
+      effects:
+        set_priority: "high"
+        loot_multiplier: 1.25
+
+    - id: "schedule_token"
+      label: "Schedule Token"
+      category: "schedule"
+      stack_rules:
+        attach_to: ["task"]
+        unique_per_task: true
+      charges:
+        mode: "finite"
+        max_charges: 2
+        consume_on:
+          - "task_process"
+        spent_behavior: "salvageable"
+      effects:
+        # "Planned work" concept: task gets a small completion bonus and zombie resistance.
+        zombie_spawn_resistance:
+          # When overdue, chance to avoid spawning a zombie
+          avoid_spawn_chance: 0.25
+        work_bonus:
+          # e.g. counts as +1 "worked today" without extra stamina (backend defines)
+          extra_progress_ticks: 1
+
+    # v0.2 planned / “real-life helper” modifiers
+    - id: "next_action"
+      label: "Next Action"
+      category: "focus"
+      stack_rules:
+        attach_to: ["task"]
+        unique_per_task: true
+        unique_global: true # only one Next Action in the entire world at a time
+      charges:
+        mode: "finite"
+        max_charges: 1
+        consume_on:
+          - "task_complete"
+        spent_behavior: "remove"
+      effects:
+        loot_multiplier: 1.5
+        ui_hint:
+          pin_to_top: true
+          highlight: true
+
+    - id: "context_filter"
+      label: "Context Filter"
+      category: "organization"
+      stack_rules:
+        attach_to: ["task"]
+        unique_per_task: true
+      charges:
+        mode: "finite"
+        max_charges: 5
+        consume_on:
+          - "task_process"
+        spent_behavior: "salvageable"
+      effects:
+        # Adds tags/contexts to the task for sorting / searching
+        add_tags: ["@context"]
+        reduce_deck_noise:
+          # Example: lowers chance of drawing unrelated blank tasks when this is in play (backend-specific)
+          enabled: true
+
+resources:
+  # Resource "nodes" that appear as cards; villagers can gather from them producing food/loot.
+  nodes:
+    - id: "berry_bush"
+      label: "Berry Bush"
+      charges:
+        min: 2
+        max: 5
+      gather:
+        base_time_s: 6
+        # time multiplier by villager level (lower is faster)
+        time_multiplier_by_level:
+          1: 1.00
+          2: 0.97
+          3: 0.94
+          4: 0.91
+          5: 0.88
+          6: 0.86
+          7: 0.84
+          8: 0.82
+          9: 0.80
+          10: 0.78
+        produces:
+          type: "food"
+          id: "berries"
+          amount: 1
+        loot_on_cycle:
+          # Optional extra drops per gather completion
+          rng_pool:
+            - type: "loot"
+              id: "coin"
+              amount: 1
+              weight: 10
+            - type: "loot"
+              id: "ink"
+              amount: 1
+              weight: 2
+            - type: "none"
+              weight: 18
+
+    - id: "mushroom_patch"
+      label: "Mushroom Patch"
+      charges:
+        min: 2
+        max: 4
+      gather:
+        base_time_s: 8
+        time_multiplier_by_level:
+          1: 1.00
+          2: 0.98
+          3: 0.96
+          4: 0.93
+          5: 0.90
+          6: 0.88
+          7: 0.86
+          8: 0.84
+          9: 0.82
+          10: 0.80
+        produces:
+          type: "food"
+          id: "mushroom"
+          amount: 1
+        loot_on_cycle:
+          rng_pool:
+            - type: "loot"
+              id: "paper"
+              amount: 1
+              weight: 6
+            - type: "loot"
+              id: "coin"
+              amount: 1
+              weight: 8
+            - type: "none"
+              weight: 18
+
+    # v0.2 “mining” example nodes
+    - id: "scrap_pile"
+      label: "Scrap Pile"
+      charges:
+        min: 3
+        max: 6
+      gather:
+        base_time_s: 10
+        time_multiplier_by_level:
+          1: 1.00
+          2: 0.96
+          3: 0.92
+          4: 0.88
+          5: 0.85
+          6: 0.82
+          7: 0.79
+          8: 0.76
+          9: 0.74
+          10: 0.72
+        produces:
+          type: "loot"
+          id: "parts"
+          amount: 1
+        loot_on_cycle:
+          rng_pool:
+            - type: "loot"
+              id: "gear"
+              amount: 1
+              weight: 4
+            - type: "loot"
+              id: "blueprint_shard"
+              amount: 1
+              weight: 1
+            - type: "none"
+              weight: 20
+
+food:
+  items:
+    - id: "berries"
+      label: "Berries"
+      stamina_restore: 2
+      effects:
+        # Optional: short buffs
+        speed_multiplier_temp:
+          enabled: false
+          value: 0.05
+          duration_tasks: 1
+
+    - id: "mushroom"
+      label: "Mushroom"
+      stamina_restore: 3
+      effects:
+        # Optional: small anti-zombie effect
+        anti_fatigue_temp:
+          enabled: false
+          duration_days: 1
+
+    - id: "bread"
+      label: "Bread"
+      stamina_restore: 4
+      effects:
+        enabled: false
+
+loot:
+  # Non-food inventory items
+  types:
+    coin:
+      label: "Coin"
+      stackable: true
+    paper:
+      label: "Paper"
+      stackable: true
+    ink:
+      label: "Ink"
+      stackable: true
+    gear:
+      label: "Gear"
+      stackable: true
+    parts:
+      label: "Parts"
+      stackable: true
+    blueprint_shard:
+      label: "Blueprint Shard"
+      stackable: true
+
+task_completion_drops:
+  # What completing a task yields by default (and by task metadata)
+  base:
+    rng_pool:
+      - type: "loot"
+        id: "coin"
+        amount: 2
+        weight: 18
+      - type: "loot"
+        id: "paper"
+        amount: 1
+        weight: 6
+      - type: "loot"
+        id: "ink"
+        amount: 1
+        weight: 4
+      - type: "none"
+        weight: 12
+
+  by_modifier:
+    importance_seal:
+      add_pool:
+        - type: "loot"
+          id: "coin"
+          amount: 2
+          weight: 10
+        - type: "loot"
+          id: "ink"
+          amount: 1
+          weight: 6
+    next_action:
+      add_pool:
+        - type: "loot"
+          id: "coin"
+          amount: 4
+          weight: 10
+        - type: "loot"
+          id: "blueprint_shard"
+          amount: 1
+          weight: 1
+
+decks:
+  # Deck costs can be static or scaled with pressure/zombies
+  economy:
+    base_cost_currency: "coin"
+    zombie_cost_multiplier_per_zombie: 0.05 # same as world penalty; explicit here too
+    overrun_cost_multiplier_per_level: 0.02
+
+  list:
+    - id: "first_day_deck"
+      label: "Inbox Deck"
+      type: "first_day"
+      status: "unlocked"
+      base_cost: 0
+      free_opens: 5
+      description: "Starter supplies: blank tasks, basic modifiers, and a villager."
+      unlock_condition: { type: "always" }
+
+      draws:
+        # How many cards appear when opened
+        count: 3
+
+        rng_pool:
+          - card_type: "blank_task"
+            weight: 40
+
+          - card_type: "villager"
+            villager_id: "default_villager"
+            weight: 10
+
+          - card_type: "modifier"
+            modifier_id: "schedule_token"
+            weight: 10
+
+          - card_type: "modifier"
+            modifier_id: "importance_seal"
+            weight: 7
+
+          - card_type: "modifier"
+            modifier_id: "deadline_pin"
+            weight: 6
+
+          - card_type: "loot"
+            loot_id: "coin"
+            amount: 5
+            weight: 12
+
+          - card_type: "resource_node"
+            resource_id: "berry_bush"
+            weight: 15
+
+    - id: "organization_deck"
+      label: "Organization Deck"
+      type: "organization"
+      status: "locked"
+      base_cost: 10
+      description: "Tools for scheduling, priority, and planning."
+      unlock_condition:
+        type: "processed_tasks_gte"
+        value: 10
+
+      draws:
+        count: 3
+        rng_pool:
+          - card_type: "modifier"
+            modifier_id: "recurring_contract"
+            weight: 10
+          - card_type: "modifier"
+            modifier_id: "deadline_pin"
+            weight: 10
+          - card_type: "modifier"
+            modifier_id: "importance_seal"
+            weight: 12
+          - card_type: "modifier"
+            modifier_id: "context_filter"
+            weight: 8
+          - card_type: "modifier"
+            modifier_id: "next_action"
+            weight: 4
+          - card_type: "loot"
+            loot_id: "ink"
+            amount: 2
+            weight: 10
+          - card_type: "loot"
+            loot_id: "paper"
+            amount: 2
+            weight: 10
+          - card_type: "resource_node"
+            resource_id: "mushroom_patch"
+            weight: 6
+
+    - id: "survival_deck"
+      label: "Survival Deck"
+      type: "survival"
+      status: "locked"
+      base_cost: 12
+      description: "Food and recovery tools so you can keep working."
+      unlock_condition:
+        type: "zombies_seen_gte"
+        value: 3
+
+      draws:
+        count: 3
+        rng_pool:
+          - card_type: "resource_node"
+            resource_id: "berry_bush"
+            weight: 16
+          - card_type: "resource_node"
+            resource_id: "mushroom_patch"
+            weight: 16
+          - card_type: "food"
+            food_id: "bread"
+            amount: 1
+            weight: 8
+          - card_type: "loot"
+            loot_id: "coin"
+            amount: 3
+            weight: 12
+          - card_type: "modifier"
+            modifier_id: "schedule_token"
+            weight: 10
+
+zombies:
+  types:
+    - id: "default_zombie"
+      label: "Zombie"
+      # Why it spawned is stored as reason in zombie entity
+      behaviors:
+        # penalty effects are applied globally while zombie is active
+        deck_cost_multiplier: 0.05
+        fatigue_on_tick:
+          enabled: false
+          stamina_reduction: 1
+      cleanup:
+        stamina_cost: 2
+        reward_on_clear:
+          rng_pool:
+            - type: "loot"
+              id: "coin"
+              amount: 2
+              weight: 12
+            - type: "loot"
+              id: "paper"
+              amount: 1
+              weight: 6
+            - type: "none"
+              weight: 12
+
+salvage:
+  enabled: true
+  # When a modifier becomes spent, it can be salvaged into loot.
+  spent_modifier_to_loot:
+    recurring_contract:
+      rng_pool:
+        - type: "loot"
+          id: "ink"
+          amount: 1
+          weight: 10
+        - type: "loot"
+          id: "paper"
+          amount: 1
+          weight: 6
+        - type: "none"
+          weight: 8
+    schedule_token:
+      rng_pool:
+        - type: "loot"
+          id: "paper"
+          amount: 1
+          weight: 10
+        - type: "none"
+          weight: 10
+    importance_seal:
+      rng_pool:
+        - type: "loot"
+          id: "coin"
+          amount: 2
+          weight: 10
+        - type: "loot"
+          id: "ink"
+          amount: 1
+          weight: 4
+        - type: "none"
+          weight: 10
+
+rules:
+  stacking:
+    # server validation rules
+    allowed_pairs:
+      - ["villager", "task"]
+      - ["task", "modifier"]
+      - ["villager", "zombie"] # attack
+      - ["villager", "resource_node"] # gather
+      - ["villager", "food"] # eat
+      - ["task", "task"] # recipe attempt (server decides if any)
+    disallowed:
+      - ["zombie", "task"]
+      - ["modifier", "villager"]
+      - ["food", "task"]
+  uniqueness:
+    # global uniqueness constraints
+    global_unique_modifiers:
+      - "next_action"
+
+ui_hints:
+  # purely optional; frontend may read these to display, but cannot enforce logic
+  highlights:
+    next_action_glow: true
+    legal_stack_green: true
+    illegal_stack_red: true
+  board:
+    default_spawn_layout:
+      villagers:
+        start_x: 800
+        start_y: 150
+        dx: 180
+      tasks:
+        start_x: 400
+        start_y: 400
+        grid_cols: 6
+        dx: 150
+        dy: 190
+      zombies:
+        start_x: 1500
+        start_y: 150
+        dx: 150

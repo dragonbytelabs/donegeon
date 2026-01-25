@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "frontend",
+      "dependencies": {
+        "@types/node": "^25.0.10",
+      },
       "devDependencies": {
         "turbo": "catalog:",
       },

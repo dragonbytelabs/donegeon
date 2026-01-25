@@ -1,4 +1,4 @@
-module cleartify
+module donegeon
 
 go 1.24.4
 

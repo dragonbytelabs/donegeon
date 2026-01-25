@@ -4,8 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"cleartify/ui"
-	"cleartify/ui/page"
+	"donegeon/ui/page"
 
 	"github.com/a-h/templ"
 )
@@ -18,7 +17,6 @@ func main() {
 
 	// Page
 	mux.Handle("/", templ.Handler(page.HomePage()))
-	mux.Handle("/builder", templ.Handler(ui.BuilderPage()))
 	mux.Handle("/board", templ.Handler(page.BoardPage()))
 
 	addr := ":42069"
