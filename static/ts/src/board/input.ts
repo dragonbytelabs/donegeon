@@ -7,8 +7,23 @@ import { openPackFromDeck } from "./deck";
 import { spawn } from "../model/catalog";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
+const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click
 
-type DragState = { stackId: string; pointerId: number; offX: number; offY: number } | null;
+type DragState =
+  | {
+    stackId: string;
+    pointerId: number;
+    offX: number;
+    offY: number
+    startClientX: number;
+    startClientY: number;
+    moved: boolean;
+  }
+  | null;
+
+function isDragging(dragState: DragState): boolean {
+  return dragState !== null;
+}
 
 function stackNodeById(id: string): HTMLElement | null {
   return document.querySelector(`.sl-stack[data-stack-id="${id}"]`) as HTMLElement | null;
@@ -16,48 +31,6 @@ function stackNodeById(id: string): HTMLElement | null {
 
 function rect(el: HTMLElement) {
   return el.getBoundingClientRect();
-}
-
-function bindDeckInteractions(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLElement, cfg: DonegeonConfig, firstDayOpenIndex: number) {
-  boardEl.addEventListener("pointerup", (e) => {
-    const t = e.target as HTMLElement;
-    const stackEl = t.closest(".sl-stack") as HTMLElement | null;
-    if (!stackEl) return;
-
-    const stackId = stackEl.dataset.stackId!;
-    const s = engine.getStack(stackId);
-    if (!s) return;
-
-    const top = s.topCard();
-    if (!top) return;
-
-    // click First Day deck => spawn pack in center
-    if (top.def.id === "deck.first_day") {
-      const br = boardRoot.getBoundingClientRect();
-      const cx = br.left + br.width * 0.55;
-      const cy = br.top + br.height * 0.45;
-
-      const pan = getPan();
-      const p = clientToBoard(cx, cy, boardRoot, pan);
-
-      engine.createStack(snapToGrid(p.x, p.y), [spawn("deck.first_day_pack")]);
-      return;
-    }
-
-    // click pack => open from YAML draws
-    if (top.def.id === "deck.first_day_pack") {
-      // seed can later include account/day/etc
-      const seed = 1337 + firstDayOpenIndex++;
-      openPackFromDeck({
-        cfg,
-        engine,
-        deckStackId: stackId,
-        deckIdForDraws: "deck.first_day",
-        seed,
-      });
-      return;
-    }
-  });
 }
 
 function intersectArea(a: DOMRect, b: DOMRect) {
@@ -133,7 +106,9 @@ function bindMobilePan(boardRoot: HTMLElement, boardEl: HTMLElement) {
   }
 
   boardRoot.addEventListener("pointerdown", (e) => {
-    const t = e.target as HTMLElement;
+    const pe = e as PointerEvent;
+    const t = pe.target as HTMLElement;
+
     if (!canStartPan(t)) return;
 
     // Desktop: right mouse only
@@ -166,10 +141,10 @@ function bindLongPressMenu(_engine: Engine, boardRoot: HTMLElement) {
 }
 
 /**
- * Stack drag + merge.
+ * Stack drag + merge + open interactions.
  * (Keeps it tight: no unstack/split UX here yet.)
  */
-function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLElement) {
+function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLElement, cfg: DonegeonConfig, counter: { firstDayOpenIndex: number }) {
   boardRoot.addEventListener("contextmenu", (e) => e.preventDefault());
 
   let drag: DragState = null;
@@ -181,14 +156,12 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     const stackNode = t.closest(".sl-stack") as HTMLElement | null;
     if (!stackNode) return;
 
-    // Ignore right-click on stacks (right-click is for panning empty space)
     if (pe.pointerType === "mouse" && pe.button === 2) return;
 
     const stackId = stackNode.dataset.stackId!;
     const s = engine.getStack(stackId);
     if (!s) return;
 
-    // drag whole stack from top card only (prevents accidental grabs)
     const cardNode = t.closest(".sl-card") as HTMLElement | null;
     const idx = cardNode ? Number(cardNode.dataset.cardIndex ?? "-1") : -1;
     const cards = s.cards[0]();
@@ -196,19 +169,33 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     if (idx !== topIdx) return;
 
     engine.bringToFront(stackId);
-
     stackNode.setPointerCapture(pe.pointerId);
 
     const pan = getPan();
     const p = clientToBoard(pe.clientX, pe.clientY, boardRoot, pan);
     const sp = s.pos[0]();
 
-    drag = { stackId, pointerId: pe.pointerId, offX: p.x - sp.x, offY: p.y - sp.y };
+    drag = {
+      stackId,
+      pointerId: pe.pointerId,
+      offX: p.x - sp.x,
+      offY: p.y - sp.y,
+      startClientX: pe.clientX,
+      startClientY: pe.clientY,
+      moved: false,
+    };
   });
 
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
     if (e.pointerId !== drag.pointerId) return;
+
+    // mark as moved once we exceed slop
+    const dx = e.clientX - drag.startClientX;
+    const dy = e.clientY - drag.startClientY;
+    if (!drag.moved && dx * dx + dy * dy > DRAG_CLICK_SLOP_PX * DRAG_CLICK_SLOP_PX) {
+      drag.moved = true;
+    }
 
     const s = engine.getStack(drag.stackId);
     if (!s) return;
@@ -218,10 +205,51 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     s.pos[1]({ x: p.x - drag.offX, y: p.y - drag.offY });
   });
 
+  boardEl.addEventListener("pointerup", (e) => {
+    // If this pointerup is ending a drag that actually moved, do NOT treat as click/open.
+    if (drag && e.pointerId === drag.pointerId && drag.moved) {
+      return;
+    }
+
+    const t = e.target as HTMLElement;
+    const stackEl = t.closest(".sl-stack") as HTMLElement | null;
+    if (!stackEl) return;
+
+    const stackId = stackEl.dataset.stackId!;
+    const s = engine.getStack(stackId);
+    if (!s) return;
+
+    const top = s.topCard();
+    if (!top) return;
+
+    if (top.def.id === "deck.first_day") {
+      const br = boardRoot.getBoundingClientRect();
+      const cx = br.left + br.width * 0.55;
+      const cy = br.top + br.height * 0.45;
+      const p = clientToBoard(cx, cy, boardRoot, getPan());
+
+      engine.createStack(snapToGrid(p.x, p.y), [spawn("deck.first_day_pack")]);
+      return;
+    }
+
+    if (top.def.id === "deck.first_day_pack") {
+      const seed = 1337 + counter.firstDayOpenIndex++;
+      openPackFromDeck({
+        cfg,
+        engine,
+        deckStackId: stackId,
+        deckIdForDraws: "deck.first_day",
+        seed,
+      });
+      return;
+    }
+  });
+
   window.addEventListener("pointerup", () => {
     if (!drag) return;
 
-    const stackId = drag.stackId;
+    const { stackId } = drag;
+    const didMove = drag.moved;
     drag = null;
 
     const s = engine.getStack(stackId);
@@ -231,17 +259,16 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     const p = s.pos[0]();
     s.pos[1](snapToGrid(p.x, p.y));
 
-    // merge?
-    const target = bestMergeTarget(engine, stackId);
-    if (target) {
-      engine.mergeStacks(target, stackId);
+    // merge only if it was a real drag
+    if (didMove) {
+      const target = bestMergeTarget(engine, stackId);
+      if (target) engine.mergeStacks(target, stackId);
     }
   });
 }
 
 export {
   bindMobilePan,
-  bindDeckInteractions,
   bindLongPressMenu,
   bindBoardInput,
 }

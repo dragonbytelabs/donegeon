@@ -1,13 +1,15 @@
 import { Engine, snapToGrid } from "../../../../frontend/packages/core";
 import { spawn } from "../model/catalog";
 import { mountBoard } from "./render";
-import { bindMobilePan, bindBoardInput, bindLongPressMenu, bindDeckInteractions } from "./input";
+import { bindMobilePan, bindBoardInput, bindLongPressMenu } from "./input";
 import { initShell } from "./sidebar";
 import { applyPan } from "./pan";
 import { loadConfig } from "./utils";
 
 document.addEventListener("DOMContentLoaded", async () => {
-    let firstDayOpenIndex = 0;
+    const counter = {
+        firstDayOpenIndex: 0
+    };
 
     const cfg = await loadConfig();
 
@@ -21,9 +23,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     mountBoard(engine, boardEl);
     initShell(engine, boardRoot);
     bindMobilePan(boardRoot, boardEl);
-    bindBoardInput(engine, boardRoot, boardEl);
+    bindBoardInput(engine, boardRoot, boardEl, cfg, counter);
     bindLongPressMenu(engine, boardRoot);
-    bindDeckInteractions(engine, boardRoot, boardEl, cfg, firstDayOpenIndex);
 
     // Seed: 4 decks
     engine.createStack(snapToGrid(80, 250), [spawn("deck.first_day")]);
