@@ -95,6 +95,10 @@
   --sidebar-ring: oklch(0.645 0.246 16.439);
   --selection: oklch(0.141 0.005 285.823);
   --selection-foreground: oklch(1 0 0);
+  --ui-grid: 22px;
+  --ui-card-w: 92px;
+  --ui-card-h: 124px;
+  --ui-stack-off-y: 20px;
 }
 
 .dark {
@@ -132,13 +136,16 @@
   --selection: oklch(0.92 0.004 286.32);
   --selection-foreground: oklch(0.21 0.006 285.885);
 }
+
 @layer base {
   * {
     @apply border-border;
   }
+
   ::selection {
     @apply bg-selection text-selection-foreground;
   }
+
   html {
     @apply scroll-smooth;
   }
@@ -154,29 +161,28 @@
 @layer utilities {
   .dotted-field {
     background:
-      radial-gradient(
-          circle at 1px 1px,
-          color-mix(in oklab, var(--foreground) 12%, transparent) 1px,
-          transparent 1.6px
-        )
-        0 0 / 22px 22px,
-      radial-gradient(
-          circle at 1px 1px,
-          color-mix(in oklab, var(--foreground) 5%, transparent) 1px,
-          transparent 1.6px
-        )
-        11px 11px / 22px 22px;
+      radial-gradient(circle at 1px 1px,
+        color-mix(in oklab, var(--foreground) 12%, transparent) 1px,
+        transparent 1.6px) 0 0 / var(--ui-grid) var(--ui-grid),
+      radial-gradient(circle at 1px 1px,
+        color-mix(in oklab, var(--foreground) 5%, transparent) 1px,
+        transparent 1.6px) calc(var(--ui-grid) / 2) calc(var(--ui-grid) / 2) / var(--ui-grid) var(--ui-grid);
   }
 }
 
 @layer components {
   .sl-card {
-    @apply relative w-[92px] h-[124px] select-none;
-    /* Stacklands: thick ink outline + tiny lift */
+    @apply relative select-none;
+    width: var(--ui-card-w);
+    height: var(--ui-card-h);
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
     border: 2px solid rgba(0, 0, 0, 0.75);
     border-radius: 2px;
     background: var(--sl-bg);
+  }
+
+  .sl-top {
+    transform: translateY(-1px);
   }
 
   .sl-card::after {
@@ -187,13 +193,11 @@
     pointer-events: none;
     background:
       linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.04)),
-      repeating-linear-gradient(
-        45deg,
+      repeating-linear-gradient(45deg,
         rgba(255, 255, 255, 0.03) 0px,
         rgba(255, 255, 255, 0.03) 2px,
         rgba(0, 0, 0, 0.02) 3px,
-        rgba(0, 0, 0, 0.02) 4px
-      );
+        rgba(0, 0, 0, 0.02) 4px);
     mix-blend-mode: soft-light;
     opacity: 0.35;
   }
@@ -222,9 +226,11 @@
     background: rgba(255, 255, 255, 0.85);
     color: rgba(0, 0, 0, 0.85);
   }
+
   .sl-badge--left {
     left: 6px;
   }
+
   .sl-badge--right {
     right: 6px;
   }
@@ -235,25 +241,37 @@
   .sl-kind-wood {
     --sl-bg: #cdd3d8;
     --sl-title-bg: #b9c0c6;
-  } /* cool gray */
+  }
+
+  /* cool gray */
   .sl-kind-stone {
     --sl-bg: #aeb6bf;
     --sl-title-bg: #95a0aa;
-  } /* darker gray */
+  }
+
+  /* darker gray */
   .sl-kind-coin {
     --sl-bg: #f4e2a6;
     --sl-title-bg: #e7ce79;
-  } /* pale yellow */
+  }
+
+  /* pale yellow */
   .sl-kind-quest {
     --sl-bg: #f2b6b6;
     --sl-title-bg: #e99e9e;
-  } /* pale pink */
+  }
+
+  /* pale pink */
   .sl-kind-food {
     --sl-bg: #f4b173;
     --sl-title-bg: #e89a52;
-  } /* orange */
+  }
+
+  /* orange */
   .sl-kind-blank {
     --sl-bg: #efe9d7;
     --sl-title-bg: #e1d7bd;
-  } /* parchment */
+  }
+
+  /* parchment */
 }

@@ -8,7 +8,12 @@ package ui
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func Board() templ.Component {
+import (
+	"donegeon/internal/config"
+	"strconv"
+)
+
+func Board(boardConfig config.BoardUIConfig) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -37,7 +42,23 @@ func Board() templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div id=\"sidebarBackdrop\" class=\"fixed inset-0 z-40 hidden bg-black/50 md:hidden\"></div><main class=\"relative h-full w-full min-w-0 overflow-hidden md:col-start-2\"><div id=\"boardRoot\" class=\"relative h-full w-full min-w-0 dotted-field\"><div id=\"board\" class=\"absolute inset-0\"></div><div class=\"pointer-events-none absolute bottom-4 left-4\"><div class=\"pointer-events-auto rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur\"><b class=\"text-foreground\">Drag</b> stacks. Drop onto another stack to merge. <span class=\"mx-2 opacity-50\">•</span> <b class=\"text-foreground\">Shift+Drag</b> split from middle.</div></div></div></main></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div id=\"sidebarBackdrop\" class=\"fixed inset-0 z-40 hidden bg-black/50 md:hidden\"></div><main class=\"relative h-full w-full min-w-0 overflow-hidden md:col-start-2\"><div id=\"boardRoot\" class=\"relative h-full w-full min-w-0 dotted-field\" style=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var2 string
+		templ_7745c5c3_Var2, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(" --ui-grid:" + strconv.Itoa(boardConfig.GridSize) + "px;" +
+			" --ui-card-w:" + strconv.Itoa(boardConfig.CardWidth) + "px;" +
+			" --ui-card-h:" + strconv.Itoa(boardConfig.CardHeight) + "px;" +
+			" --ui-stack-off-y:" + strconv.Itoa(boardConfig.StackOffsetY) + "px;")
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/board.templ`, Line: 38, Col: 75}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div id=\"board\" class=\"absolute inset-0\"></div><div class=\"pointer-events-none absolute bottom-4 left-4\"><div class=\"pointer-events-auto rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur\"><b class=\"text-foreground\">Drag</b> stacks. Drop onto another stack to merge. <span class=\"mx-2 opacity-50\">•</span> <b class=\"text-foreground\">Shift+Drag</b> split from middle.</div></div></div></main></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

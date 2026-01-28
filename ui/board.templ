@@ -1,6 +1,11 @@
 package ui
 
-templ Board() {
+import (
+"strconv"
+"donegeon/internal/config"
+)
+
+templ Board(boardConfig config.BoardUIConfig) {
 	<div class="grid h-full w-full grid-rows-[48px_1fr]">
 		<header class="flex items-center justify-between border-b border-border bg-card/60 px-3 backdrop-blur">
 			<div class="flex items-center gap-2">
@@ -25,7 +30,14 @@ templ Board() {
 				class="fixed inset-0 z-40 hidden bg-black/50 md:hidden"
 			></div>
 			<main class="relative h-full w-full min-w-0 overflow-hidden md:col-start-2">
-				<div id="boardRoot" class="relative h-full w-full min-w-0 dotted-field">
+				<div id="boardRoot" class="relative h-full w-full min-w-0 dotted-field"
+					style={
+						" --ui-grid:" + strconv.Itoa(boardConfig.GridSize) + "px;" +
+						" --ui-card-w:" + strconv.Itoa(boardConfig.CardWidth) + "px;" +
+						" --ui-card-h:" + strconv.Itoa(boardConfig.CardHeight) + "px;" +
+						" --ui-stack-off-y:" + strconv.Itoa(boardConfig.StackOffsetY) + "px;"
+					}
+				>
 					<div id="board" class="absolute inset-0"></div>
 
 					<div class="pointer-events-none absolute bottom-4 left-4">

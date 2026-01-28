@@ -11,7 +11,13 @@ export type CardKind =
   | "action"
   | "memory"
   | "resource"
-  | "blank";
+  | "blank"
+  | "deck"
+  | "villager"
+  | "task"
+  | "modifier"
+  | "loot"
+  ;
 
 export type CardDefId = string;
 

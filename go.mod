@@ -2,7 +2,10 @@ module donegeon
 
 go 1.24.4
 
-require github.com/a-h/templ v0.3.977
+require (
+	github.com/a-h/templ v0.3.977
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/a-h/parse v0.0.0-20250122154542-74294addb73e // indirect

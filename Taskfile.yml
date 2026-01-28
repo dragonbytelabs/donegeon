@@ -25,7 +25,7 @@ tasks:
   ts-build:
     desc: Bundle TS into static/* (prod-ish)
     cmds:
-      - esbuild ./static/ts/src/board.ts
+      - esbuild ./static/ts/src/board/index.ts
         --bundle
         --format=esm
         --target=es2022
@@ -35,7 +35,7 @@ tasks:
   ts-watch:
     desc: Watch+rebuild board bundle
     cmds:
-      - esbuild ./static/ts/src/board.ts
+      - esbuild ./static/ts/src/board/index.ts
         --bundle
         --format=esm
         --target=es2022

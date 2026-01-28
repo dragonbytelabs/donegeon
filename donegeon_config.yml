@@ -487,7 +487,7 @@ decks:
     overrun_cost_multiplier_per_level: 0.02
 
   list:
-    - id: "first_day_deck"
+    - id: "deck.first_day"
       label: "Inbox Deck"
       type: "first_day"
       status: "unlocked"
@@ -498,38 +498,36 @@ decks:
 
       draws:
         # How many cards appear when opened
-        count: 3
+        count: 9
 
         rng_pool:
-          - card_type: "blank_task"
-            weight: 40
-
-          - card_type: "villager"
-            villager_id: "default_villager"
-            weight: 10
+          - card_type: "blank"
+            weight: 55
 
           - card_type: "modifier"
-            modifier_id: "schedule_token"
-            weight: 10
-
+            modifier_id: "recurring"
+            weight: 12
           - card_type: "modifier"
-            modifier_id: "importance_seal"
-            weight: 7
-
+            modifier_id: "next_action"
+            weight: 12
           - card_type: "modifier"
             modifier_id: "deadline_pin"
-            weight: 6
+            weight: 8
 
           - card_type: "loot"
             loot_id: "coin"
-            amount: 5
-            weight: 12
+            amount: 1
+            weight: 9
+          - card_type: "loot"
+            loot_id: "wood"
+            amount: 1
+            weight: 4
 
-          - card_type: "resource_node"
+          - card_type: "resource"
             resource_id: "berry_bush"
             weight: 15
 
-    - id: "organization_deck"
+    - id: "deck.organization"
       label: "Organization Deck"
       type: "organization"
       status: "locked"
@@ -565,11 +563,11 @@ decks:
             loot_id: "paper"
             amount: 2
             weight: 10
-          - card_type: "resource_node"
+          - card_type: "resource"
             resource_id: "mushroom_patch"
             weight: 6
 
-    - id: "survival_deck"
+    - id: "deck.survival"
       label: "Survival Deck"
       type: "survival"
       status: "locked"
@@ -582,10 +580,10 @@ decks:
       draws:
         count: 3
         rng_pool:
-          - card_type: "resource_node"
+          - card_type: "resource"
             resource_id: "berry_bush"
             weight: 16
-          - card_type: "resource_node"
+          - card_type: "resource"
             resource_id: "mushroom_patch"
             weight: 16
           - card_type: "food"
@@ -670,7 +668,7 @@ rules:
       - ["villager", "task"]
       - ["task", "modifier"]
       - ["villager", "zombie"] # attack
-      - ["villager", "resource_node"] # gather
+      - ["villager", "resource"] # gather
       - ["villager", "food"] # eat
       - ["task", "task"] # recipe attempt (server decides if any)
     disallowed:

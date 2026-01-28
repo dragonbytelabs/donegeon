@@ -1,8 +1,10 @@
 package page
 
 import "donegeon/ui"
+import "donegeon/internal/config"
 
-templ BoardPage() {
-	@ui.AppLayout("Donegeon - Board", "/static/js/board.js", ui.Board())
+templ BoardPage(boardConfig config.BoardUIConfig) {
+	
+	@ui.AppLayout("Donegeon - Board", "/static/js/board.js", ui.Board(boardConfig))
 }
 

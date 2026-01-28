@@ -565,6 +565,10 @@
   --sidebar-ring: oklch(0.645 0.246 16.439);
   --selection: oklch(0.141 0.005 285.823);
   --selection-foreground: oklch(1 0 0);
+  --ui-grid: 22px;
+  --ui-card-w: 92px;
+  --ui-card-h: 124px;
+  --ui-stack-off-y: 20px;
 }
 .dark {
   --background: oklch(0.141 0.005 285.823);
@@ -620,30 +624,33 @@
 }
 @layer utilities {
   .dotted-field {
-    background: radial-gradient( circle at 1px 1px, var(--foreground) 1px, transparent 1.6px ) 0 0 / 22px 22px, radial-gradient( circle at 1px 1px, var(--foreground) 1px, transparent 1.6px ) 11px 11px / 22px 22px;
+    background: radial-gradient(circle at 1px 1px, var(--foreground) 1px, transparent 1.6px) 0 0 / var(--ui-grid) var(--ui-grid), radial-gradient(circle at 1px 1px, var(--foreground) 1px, transparent 1.6px) calc(var(--ui-grid) / 2) calc(var(--ui-grid) / 2) / var(--ui-grid) var(--ui-grid);
     @supports (color: color-mix(in lab, red, red)) {
-      background: radial-gradient( circle at 1px 1px, color-mix(in oklab, var(--foreground) 12%, transparent) 1px, transparent 1.6px ) 0 0 / 22px 22px, radial-gradient( circle at 1px 1px, color-mix(in oklab, var(--foreground) 5%, transparent) 1px, transparent 1.6px ) 11px 11px / 22px 22px;
+      background: radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--foreground) 12%, transparent) 1px, transparent 1.6px) 0 0 / var(--ui-grid) var(--ui-grid), radial-gradient(circle at 1px 1px, color-mix(in oklab, var(--foreground) 5%, transparent) 1px, transparent 1.6px) calc(var(--ui-grid) / 2) calc(var(--ui-grid) / 2) / var(--ui-grid) var(--ui-grid);
     }
   }
 }
 @layer components {
   .sl-card {
     position: relative;
-    height: 124px;
-    width: 92px;
     -webkit-user-select: none;
     user-select: none;
+    width: var(--ui-card-w);
+    height: var(--ui-card-h);
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
     border: 2px solid rgba(0, 0, 0, 0.75);
     border-radius: 2px;
     background: var(--sl-bg);
+  }
+  .sl-top {
+    transform: translateY(-1px);
   }
   .sl-card::after {
     content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.04)), repeating-linear-gradient( 45deg, rgba(255, 255, 255, 0.03) 0px, rgba(255, 255, 255, 0.03) 2px, rgba(0, 0, 0, 0.02) 3px, rgba(0, 0, 0, 0.02) 4px );
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.04)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.03) 0px, rgba(255, 255, 255, 0.03) 2px, rgba(0, 0, 0, 0.02) 3px, rgba(0, 0, 0, 0.02) 4px);
     mix-blend-mode: soft-light;
     opacity: 0.35;
   }
