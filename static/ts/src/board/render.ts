@@ -32,7 +32,7 @@ export function mountBoard(engine: Engine, boardEl: HTMLElement) {
       const s = engine.getStack(id);
       if (!s) continue;
 
-      const m = mountStack(engine, s);
+      const m = mountStack(s);
       mounted.set(id, m);
       boardEl.appendChild(m.node);
     }
@@ -41,7 +41,7 @@ export function mountBoard(engine: Engine, boardEl: HTMLElement) {
   return mounted;
 }
 
-function mountStack(engine: Engine, s: StackEntity) {
+function mountStack(s: StackEntity) {
   const node = document.createElement("div");
   node.className = "sl-stack";
   node.dataset.stackId = s.id;
@@ -78,6 +78,15 @@ function mountStack(engine: Engine, s: StackEntity) {
 
       cards.forEach((c, idx) => {
         const isTop = idx === cards.length - 1;
+        const draft = (c.data as any)?.draft as any | undefined;
+
+        // show a more useful title if we have one
+        const title =
+          (c.def.id === "task.instance" && ((c.data as any)?.title as string | undefined)) ||
+          (draft?.title as string | undefined) ||
+          c.title;
+
+        const showInfo = c.def.kind === "task";
 
         const el = document.createElement("div");
         el.className = `sl-card ${c.skinClass}` + (isTop ? " sl-top" : "");
@@ -88,7 +97,10 @@ function mountStack(engine: Engine, s: StackEntity) {
         el.style.top = `${idx * STACK_OFFSET_Y}px`;
 
         el.innerHTML = `
-          <div class="sl-card__title">${c.title}</div>
+          <div class="sl-card__title">
+            <span>${title}</span>
+            ${showInfo ? `<button class="sl-info" data-action="task-info" title="Task info" type="button">i</button>` : ""}
+          </div>
           <div class="sl-card__body">
             <div class="sl-card__icon"><span style="font-size:18px;opacity:.85">${c.icon}</span></div>
           </div>

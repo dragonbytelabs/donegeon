@@ -181,6 +181,36 @@
     background: var(--sl-bg);
   }
 
+  .sl-card__title { position: relative; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+
+  .sl-info {
+    pointer-events: auto;
+    width: 20px; height: 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(0,0,0,.25);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  /* .sl-card__info {
+    position: absolute;
+    top: 20px;
+    right: 6px;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 18px;
+    text-align: center;
+    opacity: 0.85;
+    pointer-events: auto;
+  } */
+
+  /* .sl-card__info:hover {
+    opacity: 1;
+  } */
+
   .sl-top {
     transform: translateY(-1px);
   }

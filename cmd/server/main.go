@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"donegeon/internal/config"
+	"donegeon/internal/task"
 	"donegeon/ui/page"
 
 	"github.com/a-h/templ"
@@ -21,6 +22,13 @@ func main() {
 
 	// Static assets
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
+	// ---- Task API (NEW) ----
+	repo := task.NewMemoryRepo()
+	h := task.NewHandler(repo)
+
+	mux.HandleFunc("/api/tasks", h.TasksRoot) // POST /api/tasks
+	mux.HandleFunc("/api/tasks/", h.TasksSub) // GET/PATCH /api/tasks/{id}, PUT /api/tasks/{id}/modifiers
 
 	// API: expose config to frontend (read-only)
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {

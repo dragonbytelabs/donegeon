@@ -63,6 +63,14 @@ export const donegeonDefs = {
         skin: "sl-kind-quest",
         leftBadge: "TASK",
     },
+    "task.instance": {
+        id: "task.instance",
+        kind: "task",
+        title: "Task",
+        icon: "📝",
+        skin: "sl-kind-quest",
+        leftBadge: "TASK",
+    },
 
     // -------------------------
     // Modifiers

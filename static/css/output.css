@@ -3,6 +3,7 @@
 @layer theme, base, components, utilities;
 @layer theme {
   :root, :host {
+    --color-red-400: oklch(70.4% 0.191 22.216);
     --color-black: #000;
     --spacing: 0.25rem;
     --text-xs: 0.75rem;
@@ -315,6 +316,10 @@
     border-style: var(--tw-border-style);
     border-width: 1px;
   }
+  .border-2 {
+    border-style: var(--tw-border-style);
+    border-width: 2px;
+  }
   .border-r {
     border-right-style: var(--tw-border-style);
     border-right-width: 1px;
@@ -358,6 +363,9 @@
   }
   .bg-primary {
     background-color: var(--primary);
+  }
+  .bg-red-400 {
+    background-color: var(--color-red-400);
   }
   .p-1 {
     padding: calc(var(--spacing) * 1);
@@ -641,6 +649,23 @@
     border: 2px solid rgba(0, 0, 0, 0.75);
     border-radius: 2px;
     background: var(--sl-bg);
+  }
+  .sl-card__title {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sl-info {
+    pointer-events: auto;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.18);
+    background: rgba(0,0,0,.25);
+    font-size: 12px;
+    line-height: 18px;
   }
   .sl-top {
     transform: translateY(-1px);

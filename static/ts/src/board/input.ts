@@ -5,6 +5,7 @@ import { clientToBoard } from "./geom.dom";
 import { getPan, setPan, applyPan } from "./pan";
 import { openPackFromDeck } from "./deck";
 import { spawn } from "../model/catalog";
+import { openTaskModal } from "./taskModal";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
 const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click
@@ -21,9 +22,27 @@ type DragState =
   }
   | null;
 
-function isDragging(dragState: DragState): boolean {
-  return dragState !== null;
+function ensureTaskFaceCard(engine: Engine, stackId: string) {
+  const s = engine.getStack(stackId);
+  if (!s) return;
+
+  const cards = s.cards[0]();
+  if (cards.length <= 1) return;
+
+  const tasks = cards.filter(c => c.def.kind === "task");
+  if (!tasks.length) return;
+
+  const others = cards.filter(c => c.def.kind !== "task");
+  const next = [...others, ...tasks];
+
+  // only set if changed
+  let changed = false;
+  for (let i = 0; i < cards.length; i++) {
+    if (cards[i] !== next[i]) { changed = true; break; }
+  }
+  if (changed) s.cards[1](next);
 }
+
 
 function stackNodeById(id: string): HTMLElement | null {
   return document.querySelector(`.sl-stack[data-stack-id="${id}"]`) as HTMLElement | null;
@@ -152,6 +171,7 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
   boardEl.addEventListener("pointerdown", (e) => {
     const pe = e as PointerEvent;
     const t = pe.target as HTMLElement;
+    if ((t as HTMLElement).closest('[data-action="task-info"]')) return;
 
     const stackNode = t.closest(".sl-stack") as HTMLElement | null;
     if (!stackNode) return;
@@ -207,10 +227,36 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
 
   boardEl.addEventListener("pointerup", (e) => {
     // If this pointerup is ending a drag that actually moved, do NOT treat as click/open.
-    if (drag && e.pointerId === drag.pointerId && drag.moved) {
+    if (drag && e.pointerId === drag.pointerId && drag.moved) return;
+
+    const path = (e.composedPath?.() ?? []) as EventTarget[];
+    const infoBtn = path.find(
+      (n): n is HTMLElement =>
+        n instanceof HTMLElement && n.matches('[data-action="task-info"]')
+    );
+
+    if (infoBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const stackEl = infoBtn.closest(".sl-stack") as HTMLElement | null;
+      if (!stackEl) return;
+
+      const stackId = stackEl.dataset.stackId!;
+      const cardEl = infoBtn.closest(".sl-card") as HTMLElement | null;
+      const cardIndex = cardEl ? Number(cardEl.dataset.cardIndex ?? "-1") : -1;
+
+      boardEl.dispatchEvent(
+        new CustomEvent("donegeon:task-info", {
+          bubbles: true,
+          detail: { stackId, cardIndex },
+        })
+      );
+      // openTaskModal({ engine, stackId });
       return;
     }
 
+    // normal click handling (NOT info button)
     const t = e.target as HTMLElement;
     const stackEl = t.closest(".sl-stack") as HTMLElement | null;
     if (!stackEl) return;
@@ -262,7 +308,10 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     // merge only if it was a real drag
     if (didMove) {
       const target = bestMergeTarget(engine, stackId);
-      if (target) engine.mergeStacks(target, stackId);
+      if (target) {
+        engine.mergeStacks(target, stackId);
+        ensureTaskFaceCard(engine, target);
+      }
     }
   });
 }
