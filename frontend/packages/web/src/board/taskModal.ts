@@ -1,7 +1,8 @@
 import type { Engine } from "@donegeon/core";
-import { CardEntity } from "@donegeon/core";
+import type { CardEntity } from "@donegeon/core";
 import { donegeonDefs } from "../model/catalog";
 import type { TaskDTO, ModifierSchema, ModalRefs } from "../model/types";
+import { updateCard } from "./immut";
 
 function schemaFromModifiers(mods: string[]): ModifierSchema {
   return {
@@ -12,69 +13,69 @@ function schemaFromModifiers(mods: string[]): ModifierSchema {
 }
 
 function getStack(engine: Engine, stackId: string) {
-    const s = engine.getStack(stackId);
-    if (!s) throw new Error(`missing stack ${stackId}`);
-    return s;
+  const s = engine.getStack(stackId);
+  if (!s) throw new Error(`missing stack ${stackId}`);
+  return s;
 }
 
+/** Find the top-most task card (face card rule). */
 function findTaskFaceCard(engine: Engine, stackId: string): CardEntity {
-    const s = getStack(engine, stackId);
-    const cards = s.cards[0]();
+  const s = getStack(engine, stackId);
+  const cards = s.cards[0]();
 
-    // face card should be the top-most task card (you’re enforcing this)
-    for (let i = cards.length - 1; i >= 0; i--) {
-        const c = cards[i] as any;
-        if (c?.def?.kind === "task") return c as CardEntity;
-    }
-    throw new Error("No task card in stack");
+  for (let i = cards.length - 1; i >= 0; i--) {
+    const c = cards[i] as any;
+    if (c?.def?.kind === "task") return c as CardEntity;
+  }
+  throw new Error("No task card in stack");
+}
+
+/** ✅ Find a card by id (for live editing / re-reading during modal). */
+function findCardById(engine: Engine, stackId: string, cardId: string): CardEntity | null {
+  const s = engine.getStack(stackId);
+  if (!s) return null;
+  const cards = s.cards[0]();
+  const c = cards.find((x: any) => x?.id === cardId);
+  return (c as CardEntity) ?? null;
 }
 
 function getModifierIdsFromStack(engine: Engine, stackId: string): string[] {
-    const s = getStack(engine, stackId);
-    const cards = s.cards[0]();
+  const s = getStack(engine, stackId);
+  const cards = s.cards[0]();
 
-    const mods = cards
-        .filter((c: any) => c?.def?.kind === "modifier")
-        .map((c: any) => String(c.def.id ?? "")) // e.g. "mod.deadline_pin"
-        .filter(Boolean)
-        .map((id) => id.startsWith("mod.") ? id.slice(4) : id); // => "deadline_pin"
+  const mods = cards
+    .filter((c: any) => c?.def?.kind === "modifier")
+    .map((c: any) => String(c.def.id ?? "")) // "mod.deadline_pin"
+    .filter(Boolean)
+    .map((id) => (id.startsWith("mod.") ? id.slice(4) : id)); // "deadline_pin"
 
-    // enforce max 4 (you can also show an error)
-    return mods.slice(0, 4);
-}
-
-function bumpStack(engine: Engine, stackId: string) {
-    const s = engine.getStack(stackId);
-    if (!s) return;
-    // re-set same array to trigger reactive render if your core uses identity checks
-    const cards = s.cards[0]();
-    s.cards[1]([...cards]);
+  return mods.slice(0, 4);
 }
 
 async function apiGetTask(id: string): Promise<TaskDTO> {
-    const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`);
-    if (!res.ok) throw new Error(`GET /api/tasks/${id} failed: ${res.status}`);
-    return res.json();
+  const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`GET /api/tasks/${id} failed: ${res.status}`);
+  return res.json();
 }
 
 async function apiCreateTask(input: Omit<TaskDTO, "id">): Promise<TaskDTO> {
-    const res = await fetch(`/api/tasks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-    });
-    if (!res.ok) throw new Error(`POST /api/tasks failed: ${res.status}`);
-    return res.json();
+  const res = await fetch(`/api/tasks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`POST /api/tasks failed: ${res.status}`);
+  return res.json();
 }
 
 async function apiPatchTask(id: string, patch: Partial<Omit<TaskDTO, "id">>): Promise<TaskDTO> {
-    const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-    });
-    if (!res.ok) throw new Error(`PATCH /api/tasks/${id} failed: ${res.status}`);
-    return res.json();
+  const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`PATCH /api/tasks/${id} failed: ${res.status}`);
+  return res.json();
 }
 
 let refs: ModalRefs | null = null;
@@ -83,7 +84,7 @@ let ctx:
   | {
       engine: Engine;
       stackId: string;
-      card: CardEntity;
+      cardId: string; // ✅ store id, not object
       existingTaskId?: string;
       mods: string[];
       schema: ModifierSchema;
@@ -101,7 +102,9 @@ function ensureModalMounted() {
 
   const overlay = document.getElementById("taskModalOverlay") as HTMLDivElement | null;
   const panel = document.getElementById("taskModalPanel") as HTMLDivElement | null;
-  if (!overlay || !panel) throw new Error("Task modal templ shell not found. Did you mount @TaskModalShell()?");
+  if (!overlay || !panel) {
+    throw new Error("Task modal templ shell not found. Did you mount @TaskModalShell()?");
+  }
 
   refs = {
     overlay,
@@ -135,7 +138,6 @@ function ensureModalMounted() {
     ctx = null;
   }
 
-  // click outside panel closes
   refs.overlay.addEventListener("pointerdown", (e) => {
     if (e.target === refs!.overlay) close();
   });
@@ -145,54 +147,88 @@ function ensureModalMounted() {
     if (!refs || !ctx) return;
     refs.err.textContent = "";
 
+    // Ensure card still exists (important for your “edit during modal” plan)
+    const liveCard = findCardById(ctx.engine, ctx.stackId, ctx.cardId);
+    if (!liveCard) {
+      refs.err.textContent = "This card no longer exists (stack changed while modal was open).";
+      return;
+    }
+
     const next: Omit<TaskDTO, "id"> = {
       title: refs.title.value.trim(),
       description: refs.desc.value.trim(),
       done: refs.done.checked,
       project: refs.project.value.trim() || undefined,
-      tags: refs.tags.value.split(",").map(s => s.trim()).filter(Boolean),
+      tags: refs.tags.value.split(",").map((s) => s.trim()).filter(Boolean),
 
       modifiers: ctx.mods,
 
-      // dynamic fields:
       dueDate: ctx.schema.showDueDate ? (refs.dueDate.value || undefined) : undefined,
       nextAction: ctx.schema.showNextAction ? refs.nextAction.checked : false,
       recurrence: ctx.schema.showRecurrence
-        ? { type: refs.recType.value as any, interval: Math.max(1, Number(refs.recInv.value || "1")) }
+        ? {
+            type: refs.recType.value as any,
+            interval: Math.max(1, Number(refs.recInv.value || "1")),
+          }
         : undefined,
     };
 
-    // keep draft on the card until save succeeds
-    (ctx.card.data).draft = next;
-    bumpStack(ctx.engine, ctx.stackId);
+    // Keep draft on the card until save succeeds (immutable)
+    updateCard(ctx.engine, ctx.stackId, ctx.cardId, {
+      recipe(d) {
+        d.draft = next;
+      },
+    });
 
     try {
       let saved: TaskDTO;
 
       if (!ctx.existingTaskId) {
         saved = await apiCreateTask(next);
-        (ctx.card.data).taskId = saved.id;
 
-        // promote def
-        (ctx.card).def = (donegeonDefs)["task.instance"];
+        // ✅ promote def + write all fields immutably (def is readonly)
+        updateCard(ctx.engine, ctx.stackId, ctx.cardId, {
+          nextDef: (donegeonDefs as any)["task.instance"],
+          recipe(d) {
+            d.taskId = saved.id;
+
+            d.title = saved.title;
+            d.description = saved.description;
+            d.done = saved.done;
+            d.project = saved.project;
+            d.tags = saved.tags;
+
+            d.modifiers = saved.modifiers;
+            d.dueDate = saved.dueDate;
+            d.nextAction = saved.nextAction;
+            d.recurrence = saved.recurrence;
+
+            delete d.draft;
+          },
+        });
+
+        // keep ctx updated if you hit Save again while modal stays open
+        ctx.existingTaskId = saved.id;
       } else {
         saved = await apiPatchTask(ctx.existingTaskId, next);
+
+        updateCard(ctx.engine, ctx.stackId, ctx.cardId, {
+          recipe(d) {
+            d.title = saved.title;
+            d.description = saved.description;
+            d.done = saved.done;
+            d.project = saved.project;
+            d.tags = saved.tags;
+
+            d.modifiers = saved.modifiers;
+            d.dueDate = saved.dueDate;
+            d.nextAction = saved.nextAction;
+            d.recurrence = saved.recurrence;
+
+            delete d.draft;
+          },
+        });
       }
-
-      // store useful display fields on card
-      (ctx.card.data).title = saved.title;
-      (ctx.card.data).description = saved.description;
-      (ctx.card.data).done = saved.done;
-      (ctx.card.data).project = saved.project;
-      (ctx.card.data).tags = saved.tags;
-      (ctx.card.data).modifiers = saved.modifiers;
-      (ctx.card.data).dueDate = saved.dueDate;
-      (ctx.card.data).nextAction = saved.nextAction;
-      (ctx.card.data).recurrence = saved.recurrence;
-
-      delete (ctx.card.data).draft;
-
-      bumpStack(ctx.engine, ctx.stackId);
 
       close();
     } catch (e: any) {
@@ -207,13 +243,14 @@ export async function openTaskModal(opts: { engine: Engine; stackId: string; car
   const r = ensureModalMounted();
 
   const { engine, stackId } = opts;
-  const card = findTaskFaceCard(engine, stackId);
+
+  const face = findTaskFaceCard(engine, stackId);
   const mods = getModifierIdsFromStack(engine, stackId);
   const schema = schemaFromModifiers(mods);
 
-  if (!card || card.def.kind !== "task") return;
+  if (!face || face.def.kind !== "task") return;
 
-  const data = (card.data ?? {}) as any;
+  const data = (face.data ?? {}) as any;
   const existingTaskId = data.taskId as string | undefined;
 
   let model: Omit<TaskDTO, "id"> = {
@@ -249,8 +286,15 @@ export async function openTaskModal(opts: { engine: Engine; stackId: string; car
     model = { ...model, ...data.draft };
   }
 
-  // store open context for Save
-  ctx = { engine, stackId, card, existingTaskId, mods, schema };
+  // store open context for Save (store ids only)
+  ctx = {
+    engine,
+    stackId,
+    cardId: face.id,
+    existingTaskId,
+    mods,
+    schema,
+  };
 
   // hydrate inputs
   r.title.value = model.title ?? "";

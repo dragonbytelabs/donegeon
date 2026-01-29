@@ -22,33 +22,37 @@ tasks:
     cmds:
       - ./tailwindcss -i ./static/css/input.css -o ./static/css/output.css --watch
 
-  ts-build:
-    desc: Bundle TS into static/* (prod-ish)
+  ts-install:
+    desc: Install deps for static/js build 
+    dir: ./frontend
     cmds:
-      - esbuild ./static/ts/src/board/index.ts
-        --bundle
-        --format=esm
-        --target=es2022
-        --minify
-        --outfile=./static/js/board.js
+      - bun install
 
-  ts-watch:
-    desc: Watch+rebuild board bundle
+  bun-install:
+    desc: Install bun deps for frontend workspace (core + web)
+    dir: ./frontend
     cmds:
-      - esbuild ./static/ts/src/board/index.ts
-        --bundle
-        --format=esm
-        --target=es2022
-        --sourcemap
-        --outfile=./static/js/board.js
-        --watch
+      - bun install
 
-  # Start development server
+  web-build:
+    desc: Build web package once (writes to ./static/js)
+    deps: [bun-install]
+    dir: ./frontend/packages/web
+    cmds:
+      - bun run build
+
+  web-watch:
+    desc: Watch build web package to ./static/js (NOT a dev server)
+    deps: [bun-install]
+    dir: ./frontend/packages/web
+    cmds:
+      - bun run watch
+
   dev:
-    desc: Start development server with hot reload
+    desc: Start dev loop (templ + tailwind + web watch)
     deps:
       - tailwind-build
+      - bun-install
+      - web-build
     cmds:
-      - echo "Starting app..."
-      - sleep 1
-      - task --parallel tailwind-watch templ ts-watch
+      - task --parallel tailwind-watch templ web-watch

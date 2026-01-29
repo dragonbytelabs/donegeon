@@ -39,8 +39,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   engine.createStack(snapToGrid(80, 570), [spawn("deck.survival")]);
 
   // Seed: villagers
+
   engine.createStack(snapToGrid(420, 420), [spawn("villager.basic", { name: "Flicker" })]);
   engine.createStack(snapToGrid(540, 420), [spawn("villager.basic", { name: "Pip" })]);
+  console.log(">>>>>> seeded villagers: ");
 
   (window as any).__engine = engine;
 });
