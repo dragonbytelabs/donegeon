@@ -15,6 +15,9 @@ var (
 	ErrTooManyMods = errors.New("too many modifiers (max 4)")
 )
 
+// Patch represents a partial update.
+// nil pointer => "no change"
+// empty string for pointer fields (Project/DueDate) => clear (set to nil)
 type Patch struct {
 	Title       *string   `json:"title,omitempty"`
 	Description *string   `json:"description,omitempty"`
@@ -22,10 +25,10 @@ type Patch struct {
 	Project     *string   `json:"project,omitempty"`
 	Tags        *[]string `json:"tags,omitempty"`
 
-	Modifiers  *[]string         `json:"modifiers,omitempty"`
-	DueDate    *string           `json:"dueDate,omitempty"`
-	NextAction *bool             `json:"nextAction,omitempty"`
-	Recurrence *model.Recurrence `json:"recurrence,omitempty"`
+	Modifiers  *[]model.TaskModifierSlot `json:"modifiers,omitempty"`
+	DueDate    *string                   `json:"dueDate,omitempty"`
+	NextAction *bool                     `json:"nextAction,omitempty"`
+	Recurrence *model.Recurrence         `json:"recurrence,omitempty"`
 }
 
 type Repo interface {
@@ -50,6 +53,73 @@ func newID(prefix string) model.TaskID {
 	return model.TaskID(prefix + "_" + hex.EncodeToString(b[:]))
 }
 
+func normalizeTask(t *model.Task) {
+	if t.Tags == nil {
+		t.Tags = []string{}
+	}
+	if t.Modifiers == nil {
+		t.Modifiers = []model.TaskModifierSlot{}
+	}
+}
+
+func applyPatch(t *model.Task, p Patch) error {
+	if p.Title != nil {
+		t.Title = *p.Title
+	}
+	if p.Description != nil {
+		t.Description = *p.Description
+	}
+	if p.Done != nil {
+		t.Done = *p.Done
+	}
+
+	// pointer string field with "empty clears" semantics
+	if p.Project != nil {
+		if *p.Project == "" {
+			t.Project = nil
+		} else {
+			t.Project = p.Project
+		}
+	}
+	if p.DueDate != nil {
+		if *p.DueDate == "" {
+			t.DueDate = nil
+		} else {
+			t.DueDate = p.DueDate
+		}
+	}
+
+	if p.Tags != nil {
+		// treat nil slice as empty slice
+		if *p.Tags == nil {
+			t.Tags = []string{}
+		} else {
+			t.Tags = *p.Tags
+		}
+	}
+
+	if p.Modifiers != nil {
+		if *p.Modifiers == nil {
+			t.Modifiers = []model.TaskModifierSlot{}
+		} else {
+			if len(*p.Modifiers) > 4 {
+				return ErrTooManyMods
+			}
+			t.Modifiers = *p.Modifiers
+		}
+	}
+
+	if p.NextAction != nil {
+		t.NextAction = *p.NextAction
+	}
+	if p.Recurrence != nil {
+		// NOTE: if you need "clear recurrence" via JSON null, you’ll want a pointer-to-pointer.
+		t.Recurrence = p.Recurrence
+	}
+
+	return nil
+}
+
 func (r *MemoryRepo) Create(t model.Task) (model.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -59,12 +129,7 @@ func (r *MemoryRepo) Create(t model.Task) (model.Task, error) {
 	t.CreatedAt = now
 	t.UpdatedAt = now
 
-	if t.Tags == nil {
-		t.Tags = []string{}
-	}
-	if t.Modifiers == nil {
-		t.Modifiers = []model.TaskModifierSlot{}
-	}
+	normalizeTask(&t)
 
 	r.tasks[t.ID] = t
 	return t, nil
@@ -78,6 +143,7 @@ func (r *MemoryRepo) Get(id model.TaskID) (model.Task, error) {
 	if !ok {
 		return model.Task{}, ErrNotFound
 	}
+	normalizeTask(&t)
 	return t, nil
 }
 
@@ -90,50 +156,19 @@ func (r *MemoryRepo) Update(id model.TaskID, p Patch) (model.Task, error) {
 		return model.Task{}, ErrNotFound
 	}
 
-	if p.Title != nil {
-		t.Title = *p.Title
-	}
-	if p.Description != nil {
-		t.Description = *p.Description
-	}
-	if p.Done != nil {
-		t.Done = *p.Done
-	}
-	if p.Project != nil {
-		if *p.Project == "" {
-			t.Project = nil
-		} else {
-			t.Project = p.Project
-		}
-	}
-	if p.Tags != nil {
-		t.Tags = *p.Tags
+	if err := applyPatch(&t, p); err != nil {
+		return model.Task{}, err
 	}
 
 	t.UpdatedAt = time.Now()
+	normalizeTask(&t)
+
 	r.tasks[id] = t
 	return t, nil
 }
 
 func (r *MemoryRepo) SetModifiers(id model.TaskID, mods []model.TaskModifierSlot) (model.Task, error) {
-	if len(mods) > 4 {
-		return model.Task{}, ErrTooManyMods
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	t, ok := r.tasks[id]
-	if !ok {
-		return model.Task{}, ErrNotFound
-	}
-
-	if mods == nil {
-		mods = []model.TaskModifierSlot{}
-	}
-
-	t.Modifiers = mods
-	t.UpdatedAt = time.Now()
-	r.tasks[id] = t
-	return t, nil
+	// Make this just a wrapper around Update to avoid duplicate logic.
+	p := Patch{Modifiers: &mods}
+	return r.Update(id, p)
 }

@@ -1,14 +1,34 @@
 import type { Engine } from "@donegeon/core";
 import type { CardEntity } from "@donegeon/core";
 import { donegeonDefs } from "../model/catalog";
-import type { TaskDTO, ModifierSchema, ModalRefs } from "../model/types";
+import type { TaskDTO, ModifierSchema, ModalRefs, TaskModifierSlotDTO } from "../model/types";
 import { updateCard } from "./immut";
 
-function schemaFromModifiers(mods: string[]): ModifierSchema {
+function schemaFromModifiers(mods: TaskModifierSlotDTO[]): ModifierSchema {
+  let showDueDate = false
+  let showNextAction = false
+  let showRecurrence = false
+  mods.map(mod => {
+    const defId = mod.defId
+    switch (defId) {
+      case "mod.deadline_pin":
+        showDueDate = true
+        break;
+      case "mod.next_action":
+        showNextAction = true
+        break;
+      case "mod.recurring_contract":
+      case "mod.recurring":
+        showRecurrence = true
+        break;
+      default:
+        break;
+    }
+  })
   return {
-    showDueDate: mods.includes("deadline_pin"),
-    showNextAction: mods.includes("next_action"),
-    showRecurrence: mods.includes("recurring_contract") || mods.includes("recurring"),
+    showDueDate,
+    showNextAction,
+    showRecurrence,
   };
 }
 
@@ -39,17 +59,21 @@ function findCardById(engine: Engine, stackId: string, cardId: string): CardEnti
   return (c as CardEntity) ?? null;
 }
 
-function getModifierIdsFromStack(engine: Engine, stackId: string): string[] {
+function getModifierIdsFromStack(engine: Engine, stackId: string): TaskModifierSlotDTO[] {
+  const modArray: TaskModifierSlotDTO[] = [];
   const s = getStack(engine, stackId);
   const cards = s.cards[0]();
-
-  const mods = cards
-    .filter((c: any) => c?.def?.kind === "modifier")
-    .map((c: any) => String(c.def.id ?? "")) // "mod.deadline_pin"
+  cards
+    .filter(c => c.def.kind === "modifier")
+    .map(c => String(c.def.id ?? "")) // "mod.deadline_pin"
     .filter(Boolean)
-    .map((id) => (id.startsWith("mod.") ? id.slice(4) : id)); // "deadline_pin"
+    .map(
+      mod => {
+        modArray.push({ defId: mod.startsWith("mod.") ? mod : `mod.${mod}`, data: {} });
+      }
+    ); // {"defId":"mod.deadline_pin","data":{}}
 
-  return mods.slice(0, 4);
+  return modArray
 }
 
 async function apiGetTask(id: string): Promise<TaskDTO> {
@@ -82,13 +106,13 @@ let refs: ModalRefs | null = null;
 
 let ctx:
   | {
-      engine: Engine;
-      stackId: string;
-      cardId: string; // ✅ store id, not object
-      existingTaskId?: string;
-      mods: string[];
-      schema: ModifierSchema;
-    }
+    engine: Engine;
+    stackId: string;
+    cardId: string; // ✅ store id, not object
+    existingTaskId?: string;
+    mods: TaskModifierSlotDTO[];
+    schema: ModifierSchema;
+  }
   | null = null;
 
 function q<T extends Element>(root: ParentNode, sel: string): T {
@@ -167,9 +191,9 @@ function ensureModalMounted() {
       nextAction: ctx.schema.showNextAction ? refs.nextAction.checked : false,
       recurrence: ctx.schema.showRecurrence
         ? {
-            type: refs.recType.value as any,
-            interval: Math.max(1, Number(refs.recInv.value || "1")),
-          }
+          type: refs.recType.value as any,
+          interval: Math.max(1, Number(refs.recInv.value || "1")),
+        }
         : undefined,
     };
 
@@ -179,6 +203,8 @@ function ensureModalMounted() {
         d.draft = next;
       },
     });
+
+    console.log("SAVE payload:", next, JSON.stringify(next));
 
     try {
       let saved: TaskDTO;
@@ -302,7 +328,7 @@ export async function openTaskModal(opts: { engine: Engine; stackId: string; car
   r.done.checked = !!model.done;
   r.project.value = model.project ?? "";
   r.tags.value = (model.tags ?? []).join(", ");
-  r.mods.textContent = mods.length ? `Modifiers: ${mods.join(", ")}` : `Modifiers: (none)`;
+  r.mods.textContent = mods.length ? `Modifiers: ${mods.map(m => m.defId.slice(4)).join(", ")}` : `Modifiers: (none)`;
 
   // toggle dynamic sections
   r.dueSection.classList.toggle("hidden", !schema.showDueDate);

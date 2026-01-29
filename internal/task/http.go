@@ -26,17 +26,30 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]any{"error": msg})
 }
 
+func decodeJSON(r *http.Request, out any) error {
+	dec := json.NewDecoder(r.Body)
+	// Optional: dec.DisallowUnknownFields()
+	return dec.Decode(out)
+}
+
+type CreateInput struct {
+	Title       string                   `json:"title"`
+	Description string                   `json:"description"`
+	Done        bool                     `json:"done"`
+	Project     *string                  `json:"project"`
+	Tags        []string                 `json:"tags"`
+	Modifiers   []model.TaskModifierSlot `json:"modifiers"`
+	DueDate     *string                  `json:"dueDate"`
+	NextAction  bool                     `json:"nextAction"`
+	Recurrence  *model.Recurrence        `json:"recurrence"`
+}
+
 // /api/tasks  (collection)
 func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		var in struct {
-			Title       string   `json:"title"`
-			Description string   `json:"description"`
-			Project     *string  `json:"project"`
-			Tags        []string `json:"tags"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		var in CreateInput
+		if err := decodeJSON(r, &in); err != nil {
 			writeErr(w, 400, "bad json")
 			return
 		}
@@ -44,10 +57,19 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 		t, err := h.repo.Create(model.Task{
 			Title:       in.Title,
 			Description: in.Description,
+			Done:        in.Done,
 			Project:     in.Project,
 			Tags:        in.Tags,
+			Modifiers:   in.Modifiers,
+			DueDate:     in.DueDate,
+			NextAction:  in.NextAction,
+			Recurrence:  in.Recurrence,
 		})
 		if err != nil {
+			if err == ErrTooManyMods {
+				writeErr(w, 400, err.Error())
+				return
+			}
 			writeErr(w, 500, err.Error())
 			return
 		}
@@ -61,9 +83,8 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// /api/tasks/{id} or /api/tasks/{id}/modifiers
+// /api/tasks/{id}
 func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
-	// remainder after "/api/tasks/"
 	tail := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	tail = strings.Trim(tail, "/")
 	if tail == "" {
@@ -92,42 +113,12 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 
 		case http.MethodPatch:
 			var p Patch
-			if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			if err := decodeJSON(r, &p); err != nil {
 				writeErr(w, 400, "bad json")
 				return
 			}
 
 			t, err := h.repo.Update(model.TaskID(id), p)
-			if err == ErrNotFound {
-				writeErr(w, 404, "not found")
-				return
-			}
-			if err != nil {
-				writeErr(w, 500, err.Error())
-				return
-			}
-			writeJSON(w, 200, t)
-			return
-
-		default:
-			writeErr(w, 405, "method not allowed")
-			return
-		}
-	}
-
-	// /api/tasks/{id}/modifiers
-	if len(parts) == 2 && parts[1] == "modifiers" {
-		switch r.Method {
-		case http.MethodPut:
-			var in struct {
-				Modifiers []model.TaskModifierSlot `json:"modifiers"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-				writeErr(w, 400, "bad json")
-				return
-			}
-
-			t, err := h.repo.SetModifiers(model.TaskID(id), in.Modifiers)
 			if err == ErrTooManyMods {
 				writeErr(w, 400, err.Error())
 				return
@@ -140,7 +131,6 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 500, err.Error())
 				return
 			}
-
 			writeJSON(w, 200, t)
 			return
 

@@ -35,6 +35,8 @@ type RecurrenceDTO = {
     interval: number;
 };
 
+type TaskModifierSlotDTO = { defId: string; data?: Record<string, unknown> };
+
 type TaskDTO = {
     id: string;
     title: string;
@@ -42,7 +44,7 @@ type TaskDTO = {
     done: boolean;
     project?: string;
     tags: string[];
-    modifiers: string[];
+    modifiers: TaskModifierSlotDTO[]; 
     dueDate?: string;
     nextAction: boolean;
     recurrence?: RecurrenceDTO;
@@ -79,4 +81,4 @@ type ModalRefs = {
   btnSave: HTMLButtonElement;
 };
 
-export type { DeckPoolEntry, DeckConfig, DonegeonConfig, OpenDeckOpts, TaskDTO, RecurrenceDTO, ModifierSchema, ModalRefs };
+export type { DeckPoolEntry, DeckConfig, DonegeonConfig, OpenDeckOpts, TaskDTO, RecurrenceDTO, ModifierSchema, ModalRefs, TaskModifierSlotDTO  };
