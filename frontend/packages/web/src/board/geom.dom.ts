@@ -1,5 +1,5 @@
-import type { Pan, Point } from "../../../../frontend/packages/core";
-import { clientToBoardFromRect } from "../../../../frontend/packages/core";
+import type { Pan, Point } from "@donegeon/core";
+import { clientToBoardFromRect } from "@donegeon/core";
 
 export function boardRect(boardEl: HTMLElement) {
   return boardEl.getBoundingClientRect();

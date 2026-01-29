@@ -1,0 +1,24 @@
+{
+  "name": "@donegeon/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "devDependencies": {
+    "@donegeon/core": "workspace:*",
+    "immer": "catalog:",
+    "typescript": "catalog:",
+    "bun-types": "catalog:"
+  },
+  "dependencies": {
+    "vite": "catalog:",
+    "vite-plugin-pwa": "catalog:"
+  }
+}

@@ -16,11 +16,16 @@ var (
 )
 
 type Patch struct {
-	Title       *string   `json:"title"`
-	Description *string   `json:"description"`
-	Done        *bool     `json:"done"`
-	Project     *string   `json:"project"` // empty => clear (repo behavior)
-	Tags        *[]string `json:"tags"`
+	Title       *string   `json:"title,omitempty"`
+	Description *string   `json:"description,omitempty"`
+	Done        *bool     `json:"done,omitempty"`
+	Project     *string   `json:"project,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"`
+
+	Modifiers  *[]string         `json:"modifiers,omitempty"`
+	DueDate    *string           `json:"dueDate,omitempty"`
+	NextAction *bool             `json:"nextAction,omitempty"`
+	Recurrence *model.Recurrence `json:"recurrence,omitempty"`
 }
 
 type Repo interface {

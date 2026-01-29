@@ -1,11 +1,10 @@
-import type { Engine } from "../../../../frontend/packages/core";
-import { snapToGrid } from "../../../../frontend/packages/core";
+import type { Engine } from "@donegeon/core";
+import { snapToGrid } from "@donegeon/core";
 import { DonegeonConfig } from "../model/types";
 import { clientToBoard } from "./geom.dom";
 import { getPan, setPan, applyPan } from "./pan";
 import { openPackFromDeck } from "./deck";
 import { spawn } from "../model/catalog";
-import { openTaskModal } from "./taskModal";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
 const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click

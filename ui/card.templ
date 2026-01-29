@@ -1,19 +1,28 @@
 package ui
 
-templ SLCard(kind string, title string, leftBadge string, rightBadge string) {
-	<div class={ "sl-card " + kind }>
-		<div class="sl-card__title">{ title }</div>
-		<div class="sl-card__body">
-			<div class="sl-card__icon">
-				<!-- put an SVG here later -->
-				<span class="text-[18px] opacity-80">⬤</span>
-			</div>
-		</div>
-		if leftBadge != "" {
-			<div class="sl-badge sl-badge--left">{ leftBadge }</div>
-		}
-		if rightBadge != "" {
-			<div class="sl-badge sl-badge--right">{ rightBadge }</div>
-		}
-	</div>
+templ SLCard() {
+  <template id="slCardTpl">
+    <div class="sl-card">
+      <div class="sl-card__title">
+        <span data-slot="title"></span>
+
+        <!-- JS can hide/show this based on kind -->
+        <button
+          class="sl-info"
+          data-action="task-info"
+          title="Task info"
+          type="button"
+        >i</button>
+      </div>
+
+      <div class="sl-card__body">
+        <div class="sl-card__icon">
+          <span data-slot="icon" class="text-[18px] opacity-85"></span>
+        </div>
+      </div>
+
+      <div class="sl-badge sl-badge--left hidden" data-slot="leftBadge"></div>
+      <div class="sl-badge sl-badge--right hidden" data-slot="rightBadge"></div>
+    </div>
+  </template>
 }

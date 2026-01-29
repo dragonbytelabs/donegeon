@@ -1,8 +1,15 @@
 package model
 
-import "time"
+import (
+	"time"
+)
 
 type TaskID string
+
+type Recurrence struct {
+	Type     string `json:"type"`
+	Interval int    `json:"interval"`
+}
 
 type Task struct {
 	ID          TaskID   `json:"id"`
@@ -12,9 +19,10 @@ type Task struct {
 	Project     *string  `json:"project,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 
-	// Exactly what the UI needs to render dynamic fields:
-	// max 4 slots, each slot is a modifier def + its editable data.
-	Modifiers []TaskModifierSlot `json:"modifiers,omitempty"`
+	Modifiers  []TaskModifierSlot `json:"modifiers,omitempty"`
+	DueDate    *string            `json:"dueDate,omitempty"`
+	NextAction bool               `json:"nextAction"`
+	Recurrence *Recurrence        `json:"recurrence,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

@@ -1,4 +1,4 @@
-import { snapToGrid } from "../../../../frontend/packages/core";
+import { snapToGrid } from "@donegeon/core";
 import { spawn, type DonegeonDefId } from "../model/catalog";
 import type { DeckPoolEntry, DeckConfig, DonegeonConfig, OpenDeckOpts } from "../model/types";
 import { raf, mulberry32, pickWeightedIndex } from "./utils";

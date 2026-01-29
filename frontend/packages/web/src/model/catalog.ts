@@ -1,5 +1,5 @@
-import type { CardDef } from "../../../../frontend/packages/core";
-import { CardEntity, uid } from "../../../../frontend/packages/core";
+import type { CardDef } from "@donegeon/core";
+import { CardEntity, uid } from "@donegeon/core";
 
 export const donegeonDefs = {
     // -------------------------

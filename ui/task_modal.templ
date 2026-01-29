@@ -1,0 +1,111 @@
+package ui
+
+templ TaskModalShell() {
+  <div
+    id="taskModalOverlay"
+    class="fixed inset-0 z-[9999] hidden items-center justify-center bg-black/60"
+    data-modal="task"
+  >
+    <div
+      id="taskModalPanel"
+      class="w-[min(720px,92vw)] max-h-[85vh] overflow-auto rounded-2xl border border-white/15 bg-[#141416] p-4 text-white shadow-xl"
+    >
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="font-bold">Task</div>
+        <button
+          type="button"
+          data-taskmodal-close
+          class="rounded-xl border border-white/15 bg-transparent px-3 py-1 text-sm hover:bg-white/5"
+        >
+          Close
+        </button>
+      </div>
+
+      <label class="mt-2 block text-sm opacity-90">Title</label>
+      <input
+        data-title
+        class="mt-1 w-full rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+      />
+
+      <label class="mt-3 block text-sm opacity-90">Description</label>
+      <textarea
+        data-desc
+        rows="5"
+        class="mt-1 w-full rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+      ></textarea>
+
+      <div data-modifiers class="mt-3 text-xs opacity-70"></div>
+
+      <!-- Due date -->
+      <div data-section="duedate" class="mt-3 hidden">
+        <label class="block text-sm opacity-90">Due date</label>
+        <input
+          data-duedate
+          type="date"
+          class="mt-1 w-full rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+        />
+      </div>
+
+      <!-- Next action -->
+      <div data-section="nextaction" class="mt-3 hidden">
+        <label class="flex items-center gap-2 text-sm">
+          <input data-nextaction type="checkbox" />
+          Next action
+        </label>
+      </div>
+
+      <!-- Recurrence -->
+      <div data-section="recurrence" class="mt-3 hidden">
+        <label class="block text-sm opacity-90">Recurrence</label>
+        <div class="mt-1 flex gap-2">
+          <select
+            data-rectype
+            class="flex-1 rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+          >
+            <option value="weekly">weekly</option>
+            <option value="daily">daily</option>
+            <option value="monthly">monthly</option>
+          </select>
+          <input
+            data-recinv
+            type="number"
+            min="1"
+            value="1"
+            class="w-[120px] rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+          />
+        </div>
+      </div>
+
+      <label class="mt-3 block text-sm opacity-90">Project (optional)</label>
+      <input
+        data-project
+        class="mt-1 w-full rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+      />
+
+      <label class="mt-3 block text-sm opacity-90">Tags (comma-separated)</label>
+      <input
+        data-tags
+        class="mt-1 w-full rounded-xl border border-white/15 bg-white/5 p-2 text-white"
+      />
+
+      <div class="mt-3 flex items-center gap-3">
+        <label class="flex items-center gap-2 text-sm">
+          <input data-done type="checkbox" />
+          Done
+        </label>
+
+        <div class="flex-1"></div>
+
+        <button
+          type="button"
+          data-save
+          class="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15"
+        >
+          Save
+        </button>
+      </div>
+
+      <div data-error class="mt-3 whitespace-pre-wrap text-sm text-red-200"></div>
+    </div>
+  </div>
+}

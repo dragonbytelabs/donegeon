@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IN="${IN:-llm.md}"
-OUTDIR="${OUTDIR:-packages/core/src}"
+OUTDIR="${OUTDIR:-../packages/core/src}"
 HEADER_MARK="<!-- LLM_HEADER_END -->"
 
 if [[ ! -f "$IN" ]]; then

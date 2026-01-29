@@ -1,5 +1,5 @@
-import type { Engine } from "../../../../frontend/packages/core";
-import { snapToGrid } from "../../../../frontend/packages/core";
+import type { Engine } from "@donegeon/core";
+import { snapToGrid } from "@donegeon/core";
 import { spawn, type DonegeonDefId } from "../model/catalog";
 import { clientToBoard } from "./geom.dom";
 import { getPan } from "./pan";

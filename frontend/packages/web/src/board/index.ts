@@ -1,4 +1,4 @@
-import { Engine, snapToGrid } from "../../../../frontend/packages/core";
+import { Engine, snapToGrid } from "@donegeon/core";
 import { spawn } from "../model/catalog";
 import { mountBoard } from "./render";
 import { bindMobilePan, bindBoardInput, bindLongPressMenu } from "./input";

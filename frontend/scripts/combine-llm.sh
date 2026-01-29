@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${ROOT:-packages/core/src}"
+ROOT="${ROOT:-../packages/core/src}"
 OUT="${OUT:-llm.md}"
 
 EXCLUDE_DIRS=("node_modules" "dist" "build" ".turbo" ".git")
