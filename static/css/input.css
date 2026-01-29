@@ -2,7 +2,8 @@
 @plugin "@tailwindcss/typography";
 
 @source "../../ui/**/*.templ";
-@source "../js/**/*.ts";
+@source "../../frontend/packages/web/src/**/*.ts";
+
 
 @custom-variant dark (&:where(.dark, .dark *));
 
