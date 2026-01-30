@@ -18,6 +18,7 @@ type Task struct {
 	Done        bool     `json:"done"`
 	Project     *string  `json:"project,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
+	Live        bool     `json:"live"`
 
 	Modifiers  []TaskModifierSlot `json:"modifiers,omitempty"`
 	DueDate    *string            `json:"dueDate,omitempty"`
@@ -31,4 +32,16 @@ type Task struct {
 type TaskModifierSlot struct {
 	DefID string         `json:"defId"`          // e.g. "mod.recurring"
 	Data  map[string]any `json:"data,omitempty"` // modifier-specific editable fields
+}
+
+type TaskUpsert struct {
+	Title       string             `json:"title"`
+	Description string             `json:"description"`
+	Done        bool               `json:"done"`
+	Project     *string            `json:"project,omitempty"`
+	Tags        []string           `json:"tags,omitempty"`
+	Modifiers   []TaskModifierSlot `json:"modifiers,omitempty"`
+	DueDate     *string            `json:"dueDate,omitempty"`
+	NextAction  bool               `json:"nextAction"`
+	Recurrence  *Recurrence        `json:"recurrence,omitempty"`
 }

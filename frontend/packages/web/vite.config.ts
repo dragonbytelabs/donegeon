@@ -20,7 +20,8 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "../../../static/js"),
     rollupOptions: {
       input: {
-        board: path.resolve(__dirname, "src/board/index.ts")
+        board: "src/board/index.ts",
+        tasks: "src/tasks.ts",
       },
       output: {
         entryFileNames: "[name].js",

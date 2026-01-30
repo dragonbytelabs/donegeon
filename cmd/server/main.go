@@ -41,9 +41,10 @@ func main() {
 		}
 	})
 
-	// Page
+	// Pages
 	mux.Handle("/", templ.Handler(page.HomePage()))
 	mux.Handle("/board", templ.Handler(page.BoardPage(cfg.UI.Board)))
+	mux.Handle("/tasks", templ.Handler(page.TasksPage()))
 
 	addr := ":42069"
 	log.Printf("listening on http://localhost%s", addr)

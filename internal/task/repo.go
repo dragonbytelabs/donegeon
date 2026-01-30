@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,10 +33,26 @@ type Patch struct {
 	Recurrence *model.Recurrence         `json:"recurrence,omitempty"`
 }
 
+type ListFilter struct {
+	// Status:
+	//   "" | "all" | "pending" | "done" | "due_today" | "upcoming" | "overdue"
+	Status string
+
+	// Project:
+	//   "" | "any" | "inbox" | "projects" | "<exact project name>"
+	Project string
+
+	// Live:
+	//   nil = don't care
+	//   true/false = filter tasks by "live" state (board tasks)
+	Live *bool
+}
+
 type Repo interface {
 	Create(t model.Task) (model.Task, error)
 	Get(id model.TaskID) (model.Task, error)
 	Update(id model.TaskID, patch Patch) (model.Task, error)
+	List(filter ListFilter) ([]model.Task, error)
 	SetModifiers(id model.TaskID, mods []model.TaskModifierSlot) (model.Task, error)
 }
 
@@ -165,6 +183,103 @@ func (r *MemoryRepo) Update(id model.TaskID, p Patch) (model.Task, error) {
 
 	r.tasks[id] = t
 	return t, nil
+}
+
+func (r *MemoryRepo) List(filter ListFilter) ([]model.Task, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// "today" in server local time (matches your current app expectations)
+	today := time.Now().Format("2006-01-02")
+
+	matches := func(t model.Task) bool {
+		normalizeTask(&t)
+
+		// --- live filter (requires you add Task.Live bool to model.Task) ---
+		if filter.Live != nil {
+			// If you haven't added Live yet, comment this block out.
+			if t.Live != *filter.Live {
+				return false
+			}
+		}
+
+		// --- project filter ---
+		p := ""
+		if t.Project != nil {
+			p = strings.TrimSpace(*t.Project)
+		}
+		switch strings.ToLower(strings.TrimSpace(filter.Project)) {
+		case "", "any":
+			// no-op
+		case "inbox":
+			if p != "inbox" {
+				return false
+			}
+		case "projects":
+			// "all tasks assigned to a project" => project != inbox
+			if p == "" || p == "inbox" {
+				return false
+			}
+		default:
+			// exact match on project name
+			if p != filter.Project {
+				return false
+			}
+		}
+
+		// --- status filter ---
+		switch strings.ToLower(strings.TrimSpace(filter.Status)) {
+		case "", "all":
+			return true
+
+		case "pending":
+			return t.Done == false
+
+		case "done":
+			return t.Done == true
+
+		case "due_today":
+			return !t.Done && t.DueDate != nil && *t.DueDate == today
+
+		case "overdue":
+			// DueDate < today (YYYY-MM-DD string compare works lexicographically)
+			return !t.Done && t.DueDate != nil && *t.DueDate < today
+
+		case "upcoming":
+			// DueDate > today
+			return !t.Done && t.DueDate != nil && *t.DueDate > today
+
+		default:
+			// unknown => treat as "all"
+			return true
+		}
+	}
+
+	out := make([]model.Task, 0, len(r.tasks))
+	for _, task := range r.tasks {
+		if matches(task) {
+			out = append(out, task)
+		}
+	}
+
+	// Sort: due soonest first (nil due dates last), then updated desc
+	sort.Slice(out, func(i, j int) bool {
+		di, dj := out[i].DueDate, out[j].DueDate
+		switch {
+		case di == nil && dj == nil:
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		case di == nil:
+			return false
+		case dj == nil:
+			return true
+		case *di != *dj:
+			return *di < *dj
+		default:
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		}
+	})
+
+	return out, nil
 }
 
 func (r *MemoryRepo) SetModifiers(id model.TaskID, mods []model.TaskModifierSlot) (model.Task, error) {

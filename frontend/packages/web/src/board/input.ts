@@ -17,6 +17,8 @@ type DragState =
     offY: number
     startClientX: number;
     startClientY: number;
+    mode: "stack" | "maybe-card" | "card";
+    cardIndex: number | null;
     moved: boolean;
   }
   | null;
@@ -170,8 +172,9 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
   boardEl.addEventListener("pointerdown", (e) => {
     const pe = e as PointerEvent;
     const t = pe.target as HTMLElement;
-    if ((t as HTMLElement).closest('[data-action="task-info"]')) return;
+    if (t.closest('[data-action="task-info"]')) return;
 
+    const cardEl = t.closest(".sl-card") as HTMLElement | null;
     const stackNode = t.closest(".sl-stack") as HTMLElement | null;
     if (!stackNode) return;
 
@@ -181,11 +184,20 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     const s = engine.getStack(stackId);
     if (!s) return;
 
-    const cardNode = t.closest(".sl-card") as HTMLElement | null;
-    const idx = cardNode ? Number(cardNode.dataset.cardIndex ?? "-1") : -1;
+    const cardIndexStr = cardEl?.dataset?.cardIndex;
+    const cardIndex = cardIndexStr != null ? Number(cardIndexStr) : null;
+
+    // Decide intent:
+    // - If you grabbed the TOP card: drag the stack (existing behavior)
+    // - If you grabbed a LOWER card: peel (split on release)
     const cards = s.cards[0]();
     const topIdx = cards.length - 1;
-    if (idx !== topIdx) return;
+    const isOnCard = cardIndex != null && cardIndex >= 0;
+    const isTopCard = isOnCard && cardIndex === topIdx;
+
+    const mode: DragState extends infer D
+      ? D extends { mode: infer M } ? M : never
+      : never = isTopCard ? "stack" : isOnCard ? "maybe-card" : "stack";
 
     engine.bringToFront(stackId);
     stackNode.setPointerCapture(pe.pointerId);
@@ -201,23 +213,34 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
       offY: p.y - sp.y,
       startClientX: pe.clientX,
       startClientY: pe.clientY,
+      mode,
+      cardIndex,
       moved: false,
     };
   });
+
 
   window.addEventListener("pointermove", (e) => {
     if (!drag) return;
     if (e.pointerId !== drag.pointerId) return;
 
-    // mark as moved once we exceed slop
     const dx = e.clientX - drag.startClientX;
     const dy = e.clientY - drag.startClientY;
-    if (!drag.moved && dx * dx + dy * dy > DRAG_CLICK_SLOP_PX * DRAG_CLICK_SLOP_PX) {
-      drag.moved = true;
+    const movedNow = dx * dx + dy * dy > DRAG_CLICK_SLOP_PX * DRAG_CLICK_SLOP_PX;
+
+    // Promote maybe-card → card once we actually move
+    if (drag.mode === "maybe-card" && movedNow) {
+      drag.mode = "card";
     }
+
+    if (!drag.moved && movedNow) drag.moved = true;
 
     const s = engine.getStack(drag.stackId);
     if (!s) return;
+
+    // Only move the whole stack if we are doing a stack drag.
+    // For card drags, we don't move anything yet (we'll split on pointerup).
+    if (drag.mode !== "stack") return;
 
     const pan = getPan();
     const p = clientToBoard(e.clientX, e.clientY, boardRoot, pan);
@@ -290,25 +313,51 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     }
   });
 
-  window.addEventListener("pointerup", () => {
+  window.addEventListener("pointerup", (e) => {
     if (!drag) return;
 
-    const { stackId } = drag;
-    const didMove = drag.moved;
+    const ended = drag;
     drag = null;
 
-    const s = engine.getStack(stackId);
+    const s = engine.getStack(ended.stackId);
     if (!s) return;
 
-    // snap
+    // --- CARD DRAG: peel/split, drop new stack at pointer position ---
+    if (ended.mode === "card" && ended.moved && ended.cardIndex != null) {
+      const pan = getPan();
+      const drop = clientToBoard(e.clientX, e.clientY, boardRoot, pan);
+
+      // Engine.splitStack() soft-fails for index <= 0, so 2-card stacks (bottom card idx=0)
+      // need a different path. Peel the bottom card with popBottom().
+      let ns =
+        ended.cardIndex === 0
+          ? engine.popBottom(ended.stackId, { x: 18, y: 18 })
+          : engine.splitStack(ended.stackId, ended.cardIndex, { x: 18, y: 18 });
+
+      if (!ns) return;
+
+      ns.pos[1](snapToGrid(drop.x, drop.y));
+      engine.bringToFront(ns.id);
+
+      // keep “task face card” rule on both stacks
+      ensureTaskFaceCard(engine, ended.stackId);
+      ensureTaskFaceCard(engine, ns.id);
+
+      return;
+    }
+
+    // --- STACK DRAG: existing behavior ---
+    const didMove = ended.moved;
+
+    // snap moved stack
     const p = s.pos[0]();
     s.pos[1](snapToGrid(p.x, p.y));
 
     // merge only if it was a real drag
     if (didMove) {
-      const target = bestMergeTarget(engine, stackId);
+      const target = bestMergeTarget(engine, ended.stackId);
       if (target) {
-        engine.mergeStacks(target, stackId);
+        engine.mergeStacks(target, ended.stackId);
         ensureTaskFaceCard(engine, target);
       }
     }

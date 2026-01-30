@@ -1,0 +1,168 @@
+package ui
+
+templ TasksContent() {
+  <div class="min-h-screen bg-background text-foreground">
+    <div class="mx-auto max-w-5xl px-4 py-6">
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <h1 class="text-xl font-semibold">Tasks</h1>
+          <p class="text-sm opacity-70">Normal list view (filters + edit all fields)</p>
+        </div>
+
+        <button
+          id="taskNewBtn"
+          class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent"
+          type="button"
+        >
+          + New Task
+        </button>
+      </div>
+
+      <!-- Filters -->
+      <div class="mt-4 flex flex-wrap gap-2">
+        <select id="filterStatus" class="rounded-md border border-input bg-background px-2 py-2 text-sm">
+          <option value="pending">Pending</option>
+          <option value="done">Completed</option>
+          <option value="due_today">Due today</option>
+          <option value="upcoming">Upcoming</option>
+          <option value="overdue">Overdue</option>
+          <option value="all">All</option>
+        </select>
+
+        <select id="filterProject" class="rounded-md border border-input bg-background px-2 py-2 text-sm">
+          <option value="any">All projects</option>
+          <option value="inbox">Inbox</option>
+          <option value="projects">Projects (not inbox)</option>
+        </select>
+
+        <label class="ml-2 flex items-center gap-2 text-sm opacity-80">
+          <input id="filterLive" type="checkbox" class="h-4 w-4" />
+          Live only (board tasks)
+        </label>
+
+        <button id="filterRefresh" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent" type="button">
+          Refresh
+        </button>
+
+        <div class="ml-auto text-sm opacity-70" id="taskCount">0 tasks</div>
+      </div>
+
+      <!-- List -->
+      <div class="mt-4 overflow-hidden rounded-lg border border-border">
+        <div class="bg-card px-3 py-2 text-xs font-semibold opacity-70">TASKS</div>
+        <div id="tasksList" class="divide-y divide-border"></div>
+      </div>
+
+      <!-- Row template -->
+      <template id="taskRowTpl">
+        <div class="flex items-center gap-3 px-3 py-3 hover:bg-accent cursor-pointer" data-row>
+          <input type="checkbox" data-done class="h-4 w-4" />
+
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <div class="truncate text-sm font-medium" data-title></div>
+              <span class="rounded-full border border-border px-2 py-0.5 text-[11px] opacity-75" data-project></span>
+            </div>
+            <div class="truncate text-xs opacity-70" data-desc></div>
+          </div>
+
+          <div class="text-xs opacity-70" data-due></div>
+        </div>
+      </template>
+
+      <!-- Editor modal shell (hydrated once) -->
+      @TaskEditorShell()
+    </div>
+
+    <script type="module" src="/static/js/tasks.js"></script>
+  </div>
+}
+
+templ TaskEditorShell() {
+  <div id="taskEditorOverlay" class="hidden fixed inset-0 z-[9999] items-center justify-center bg-black/60">
+    <div id="taskEditorPanel" class="w-[min(820px,92vw)] max-h-[85vh] overflow-auto rounded-xl border border-white/10 bg-[rgba(20,20,22,.98)] p-4 text-white">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="font-semibold">Task</div>
+        <button data-editor-close class="rounded-lg border border-white/15 bg-transparent px-3 py-2 text-sm hover:bg-white/5" type="button">
+          Close
+        </button>
+      </div>
+
+      <div class="grid gap-3">
+        <div>
+          <label class="text-xs opacity-80">Title</label>
+          <input data-title class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white" />
+        </div>
+
+        <div>
+          <label class="text-xs opacity-80">Description</label>
+          <textarea data-desc rows="4" class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white"></textarea>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs opacity-80">Project (blank = inbox)</label>
+            <input data-project class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white" />
+          </div>
+
+          <div>
+            <label class="text-xs opacity-80">Tags (comma-separated)</label>
+            <input data-tags class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+          <label class="flex items-center gap-2 text-sm">
+            <input data-done type="checkbox" />
+            Done
+          </label>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input data-nextaction type="checkbox" />
+            Next action
+          </label>
+
+          <label class="text-sm">
+            <div class="text-xs opacity-80">Due date</div>
+            <input data-duedate type="date" class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white" />
+          </label>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs opacity-80">Recurrence type</label>
+            <select data-rectype class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white">
+              <option value="">(none)</option>
+              <option value="daily">daily</option>
+              <option value="weekly">weekly</option>
+              <option value="monthly">monthly</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-xs opacity-80">Recurrence interval</label>
+            <input data-recinv type="number" min="1" value="1" class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white" />
+          </div>
+        </div>
+
+        <div>
+          <label class="text-xs opacity-80">Modifiers (JSON array, max 4)</label>
+          <textarea
+            data-modifiers
+            rows="5"
+            class="mt-1 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 font-mono text-xs text-white"
+            placeholder='[{"defId":"mod.deadline_pin","data":{}},{"defId":"mod.recurring","data":{"interval":1}}]'
+          ></textarea>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button data-editor-save class="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm hover:bg-white/15" type="button">
+            Save
+          </button>
+          <div class="flex-1"></div>
+          <div data-error class="text-sm text-red-200 whitespace-pre-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+}

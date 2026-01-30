@@ -32,27 +32,59 @@ func decodeJSON(r *http.Request, out any) error {
 	return dec.Decode(out)
 }
 
-type CreateInput struct {
-	Title       string                   `json:"title"`
-	Description string                   `json:"description"`
-	Done        bool                     `json:"done"`
-	Project     *string                  `json:"project"`
-	Tags        []string                 `json:"tags"`
-	Modifiers   []model.TaskModifierSlot `json:"modifiers"`
-	DueDate     *string                  `json:"dueDate"`
-	NextAction  bool                     `json:"nextAction"`
-	Recurrence  *model.Recurrence        `json:"recurrence"`
+func normalizeProject(p *string) *string {
+	if p == nil {
+		v := "inbox"
+		return &v
+	}
+	if strings.TrimSpace(*p) == "" {
+		v := "inbox"
+		return &v
+	}
+	return p
+}
+
+func parseBoolPtr(s string) *bool {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" || s == "any" {
+		return nil
+	}
+	if s == "1" || s == "true" || s == "yes" {
+		b := true
+		return &b
+	}
+	if s == "0" || s == "false" || s == "no" {
+		b := false
+		return &b
+	}
+	return nil
 }
 
 // /api/tasks  (collection)
 func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
+	case http.MethodGet:
+		q := r.URL.Query()
+		filter := ListFilter{
+			Status:  q.Get("status"),
+			Project: q.Get("project"),
+			Live:    parseBoolPtr(q.Get("live")),
+		}
+		ts, err := h.repo.List(filter)
+		if err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, ts)
+		return
+
 	case http.MethodPost:
-		var in CreateInput
+		var in model.TaskUpsert
 		if err := decodeJSON(r, &in); err != nil {
 			writeErr(w, 400, "bad json")
 			return
 		}
+		in.Project = normalizeProject(in.Project)
 
 		t, err := h.repo.Create(model.Task{
 			Title:       in.Title,
