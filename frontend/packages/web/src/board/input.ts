@@ -5,6 +5,9 @@ import { clientToBoard } from "./geom.dom";
 import { getPan, setPan, applyPan } from "./pan";
 import { openPackFromDeck } from "./deck";
 import { spawn } from "../model/catalog";
+import { scheduleLiveSync } from "./liveSync";
+import { scheduleSave } from "./storage";
+import { cmdStackMove, cmdStackMerge, cmdStackSplit } from "./api";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
 const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click
@@ -274,7 +277,6 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
           detail: { stackId, cardIndex },
         })
       );
-      // openTaskModal({ engine, stackId });
       return;
     }
 
@@ -297,6 +299,8 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
       const p = clientToBoard(cx, cy, boardRoot, getPan());
 
       engine.createStack(snapToGrid(p.x, p.y), [spawn("deck.first_day_pack")]);
+      scheduleLiveSync(engine);
+
       return;
     }
 
@@ -336,12 +340,19 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
 
       if (!ns) return;
 
-      ns.pos[1](snapToGrid(drop.x, drop.y));
+      const snappedPos = snapToGrid(drop.x, drop.y);
+      ns.pos[1](snappedPos);
       engine.bringToFront(ns.id);
 
-      // keep “task face card” rule on both stacks
+      // keep "task face card" rule on both stacks
       ensureTaskFaceCard(engine, ended.stackId);
       ensureTaskFaceCard(engine, ns.id);
+      scheduleLiveSync(engine);
+
+      // Sync split to server (fire and forget)
+      cmdStackSplit(ended.stackId, ended.cardIndex, 18, 18).catch((err) => {
+        console.warn("split sync failed", err);
+      });
 
       return;
     }
@@ -351,7 +362,8 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
 
     // snap moved stack
     const p = s.pos[0]();
-    s.pos[1](snapToGrid(p.x, p.y));
+    const snappedPos = snapToGrid(p.x, p.y);
+    s.pos[1](snappedPos);
 
     // merge only if it was a real drag
     if (didMove) {
@@ -359,7 +371,20 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
       if (target) {
         engine.mergeStacks(target, ended.stackId);
         ensureTaskFaceCard(engine, target);
+        scheduleLiveSync(engine);
+
+        // Sync merge to server (fire and forget)
+        cmdStackMerge(target, ended.stackId).catch((err) => {
+          console.warn("merge sync failed", err);
+        });
+      } else {
+        // Just a position move, sync to server
+        cmdStackMove(ended.stackId, snappedPos.x, snappedPos.y).catch((err) => {
+          console.warn("move sync failed", err);
+        });
       }
+      // Save position changes (engine events don't cover position moves)
+      scheduleSave(engine);
     }
   });
 }

@@ -14,6 +14,15 @@ export class Engine {
   events = new Emitter<EngineEvent>();
 
   private z = 10;
+
+  getMaxZ(): number {
+    return this.z;
+  }
+
+  setMaxZ(val: number): void {
+    this.z = Math.max(this.z, val);
+  }
+
   nextZ() {
     this.z++;
     return this.z;

@@ -3,27 +3,11 @@ import type { EntityId } from "../core/ids";
 export type Point = { x: number; y: number };
 export type Pan = { x: number; y: number };
 
-export type CardKind =
-  | "event"
-  | "agent"
-  | "rule"
-  | "integration"
-  | "action"
-  | "memory"
-  | "resource"
-  | "blank"
-  | "deck"
-  | "villager"
-  | "task"
-  | "modifier"
-  | "loot"
-  ;
-
 export type CardDefId = string;
 
-export type CardDef = {
+export type CardDef<K extends string = string> = {
   id: CardDefId;
-  kind: CardKind;
+  kind: K;
   title: string;
   icon: string;
   skin: string;

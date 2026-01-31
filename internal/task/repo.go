@@ -54,15 +54,62 @@ type Repo interface {
 	Update(id model.TaskID, patch Patch) (model.Task, error)
 	List(filter ListFilter) ([]model.Task, error)
 	SetModifiers(id model.TaskID, mods []model.TaskModifierSlot) (model.Task, error)
+	SyncLive(taskIDs []model.TaskID) error
+	SetLive(id model.TaskID, live bool) error
 }
 
 type MemoryRepo struct {
-	mu    sync.RWMutex
-	tasks map[model.TaskID]model.Task
+	mu        sync.RWMutex
+	tasks     map[model.TaskID]model.Task
+	liveIndex map[model.TaskID]bool
 }
 
 func NewMemoryRepo() *MemoryRepo {
-	return &MemoryRepo{tasks: map[model.TaskID]model.Task{}}
+	return &MemoryRepo{
+		tasks:     map[model.TaskID]model.Task{},
+		liveIndex: map[model.TaskID]bool{},
+	}
+}
+
+// SyncLive replaces the server's notion of which tasks are "live on the board".
+func (r *MemoryRepo) SyncLive(taskIDs []model.TaskID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	next := make(map[model.TaskID]bool, len(taskIDs))
+	for _, id := range taskIDs {
+		if id == "" {
+			continue
+		}
+		if t, ok := r.tasks[id]; ok && !t.Done {
+			next[id] = true
+		}
+	}
+	r.liveIndex = next
+	return nil
+}
+
+func (r *MemoryRepo) SetLive(id model.TaskID, live bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	t, ok := r.tasks[id]
+	if !ok {
+		return ErrNotFound
+	}
+
+	// done tasks can never be live
+	if t.Done {
+		delete(r.liveIndex, id)
+		return nil
+	}
+
+	if live {
+		r.liveIndex[id] = true
+	} else {
+		delete(r.liveIndex, id)
+	}
+	return nil
 }
 
 func newID(prefix string) model.TaskID {
@@ -178,6 +225,11 @@ func (r *MemoryRepo) Update(id model.TaskID, p Patch) (model.Task, error) {
 		return model.Task{}, err
 	}
 
+	// If a task is marked done, it can no longer be live.
+	if t.Done {
+		r.liveIndex[t.ID] = false
+	}
+
 	t.UpdatedAt = time.Now()
 	normalizeTask(&t)
 
@@ -189,17 +241,33 @@ func (r *MemoryRepo) List(filter ListFilter) ([]model.Task, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// "today" in server local time (matches your current app expectations)
+	// "today" in server local time (YYYY-MM-DD)
 	today := time.Now().Format("2006-01-02")
 
-	matches := func(t model.Task) bool {
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	projectFilter := strings.TrimSpace(filter.Project)
+	projectFilterLower := strings.ToLower(projectFilter)
+
+	out := make([]model.Task, 0, len(r.tasks))
+
+	for _, t0 := range r.tasks {
+		// work on a copy so we can normalize + compute Live safely
+		t := t0
 		normalizeTask(&t)
 
-		// --- live filter (requires you add Task.Live bool to model.Task) ---
+		// ✅ compute live from the server index
+		if t.Done {
+			t.Live = false
+		} else if r.liveIndex != nil {
+			t.Live = r.liveIndex[t.ID] && !t.Done
+		} else {
+			t.Live = false
+		}
+
+		// --- live filter ---
 		if filter.Live != nil {
-			// If you haven't added Live yet, comment this block out.
 			if t.Live != *filter.Live {
-				return false
+				continue
 			}
 		}
 
@@ -208,58 +276,54 @@ func (r *MemoryRepo) List(filter ListFilter) ([]model.Task, error) {
 		if t.Project != nil {
 			p = strings.TrimSpace(*t.Project)
 		}
-		switch strings.ToLower(strings.TrimSpace(filter.Project)) {
+		switch projectFilterLower {
 		case "", "any":
 			// no-op
 		case "inbox":
 			if p != "inbox" {
-				return false
+				continue
 			}
 		case "projects":
-			// "all tasks assigned to a project" => project != inbox
+			// project != inbox
 			if p == "" || p == "inbox" {
-				return false
+				continue
 			}
 		default:
-			// exact match on project name
-			if p != filter.Project {
-				return false
+			// exact match (case-sensitive or normalize as you prefer)
+			if p != projectFilter {
+				continue
 			}
 		}
 
 		// --- status filter ---
-		switch strings.ToLower(strings.TrimSpace(filter.Status)) {
+		switch status {
 		case "", "all":
-			return true
-
+			// no-op
 		case "pending":
-			return t.Done == false
-
+			if t.Done {
+				continue
+			}
 		case "done":
-			return t.Done == true
-
+			if !t.Done {
+				continue
+			}
 		case "due_today":
-			return !t.Done && t.DueDate != nil && *t.DueDate == today
-
+			if t.Done || t.DueDate == nil || *t.DueDate != today {
+				continue
+			}
 		case "overdue":
-			// DueDate < today (YYYY-MM-DD string compare works lexicographically)
-			return !t.Done && t.DueDate != nil && *t.DueDate < today
-
+			if t.Done || t.DueDate == nil || *t.DueDate >= today {
+				continue
+			}
 		case "upcoming":
-			// DueDate > today
-			return !t.Done && t.DueDate != nil && *t.DueDate > today
-
+			if t.Done || t.DueDate == nil || *t.DueDate <= today {
+				continue
+			}
 		default:
 			// unknown => treat as "all"
-			return true
 		}
-	}
 
-	out := make([]model.Task, 0, len(r.tasks))
-	for _, task := range r.tasks {
-		if matches(task) {
-			out = append(out, task)
-		}
+		out = append(out, t)
 	}
 
 	// Sort: due soonest first (nil due dates last), then updated desc

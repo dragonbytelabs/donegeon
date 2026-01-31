@@ -172,5 +172,86 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// /api/tasks/{id}/live
+	if len(parts) == 2 && parts[1] == "live" {
+		switch r.Method {
+		case http.MethodPut:
+			var in struct {
+				Live *bool `json:"live"`
+			}
+			if err := decodeJSON(r, &in); err != nil {
+				writeErr(w, 400, "bad json")
+				return
+			}
+			if in.Live == nil {
+				writeErr(w, 400, `missing field "live"`)
+				return
+			}
+
+			if err := h.repo.SetLive(model.TaskID(id), *in.Live); err != nil {
+				if err == ErrNotFound {
+					writeErr(w, 404, "not found")
+					return
+				}
+				writeErr(w, 500, err.Error())
+				return
+			}
+
+			t, err := h.repo.Get(model.TaskID(id))
+			if err == ErrNotFound {
+				writeErr(w, 404, "not found")
+				return
+			}
+			if err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+			writeJSON(w, 200, t)
+			return
+
+		default:
+			writeErr(w, 405, "method not allowed")
+			return
+		}
+	}
+
 	writeErr(w, 404, "not found")
+}
+
+// /api/tasks/live  (batch sync)
+func (h *Handler) TasksLive(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPut:
+		var in struct {
+			TaskIDs []string `json:"taskIds"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			writeErr(w, 400, "bad json")
+			return
+		}
+
+		ids := make([]model.TaskID, 0, len(in.TaskIDs))
+		for _, s := range in.TaskIDs {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			ids = append(ids, model.TaskID(s))
+		}
+
+		if err := h.repo.SyncLive(ids); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
+
+		writeJSON(w, 200, map[string]any{
+			"ok":    true,
+			"count": len(ids),
+		})
+		return
+
+	default:
+		writeErr(w, 405, "method not allowed")
+		return
+	}
 }

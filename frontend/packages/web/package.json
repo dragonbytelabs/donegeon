@@ -16,14 +16,13 @@
     "@donegeon/core": "workspace:*",
     "immer": "catalog:",
     "typescript": "catalog:",
-    "bun-types": "catalog:"
-  },
-  "dependencies": {
-    "vite": "catalog:",
+    "bun-types": "catalog:",
     "vite-plugin-pwa": "catalog:",
     "workbox": "catalog:",
     "workbox-precaching": "catalog:",
     "workbox-routing": "catalog:",
-    "workbox-strategies": "catalog:"
+    "workbox-strategies": "catalog:",
+    "vite": "catalog:",
+    "idb": "catalog:"
   }
 }

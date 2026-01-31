@@ -1,4 +1,15 @@
-import { Engine } from "@donegeon/core";
+import { type CardDef, type Engine } from "@donegeon/core";
+
+export type DonegeonCardKind =
+  | "blank"
+  | "deck"
+  | "villager"
+  | "task"
+  | "modifier"
+  | "loot"
+;
+
+export type DonegeonCardDef = CardDef<DonegeonCardKind>;
 
 type DeckPoolEntry = {
     card_type: "blank" | "villager" | "modifier" | "loot" | "resource" | "food";

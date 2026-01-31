@@ -18,7 +18,7 @@ type Task struct {
 	Done        bool     `json:"done"`
 	Project     *string  `json:"project,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
-	Live        bool     `json:"live"`
+	Live        bool     `json:"live,omitempty"`
 
 	Modifiers  []TaskModifierSlot `json:"modifiers,omitempty"`
 	DueDate    *string            `json:"dueDate,omitempty"`

@@ -1,5 +1,5 @@
-import type { CardDef } from "@donegeon/core";
 import { CardEntity, uid } from "@donegeon/core";
+import type { DonegeonCardDef, DonegeonCardKind } from "./types";
 
 export const donegeonDefs = {
     // -------------------------
@@ -119,7 +119,7 @@ export const donegeonDefs = {
         skin: "sl-kind-wood",
         leftBadge: "+1",
     },
-} satisfies Record<string, CardDef>;
+} satisfies Record<string, DonegeonCardDef>;
 
 export type DonegeonDefId = keyof typeof donegeonDefs;
 

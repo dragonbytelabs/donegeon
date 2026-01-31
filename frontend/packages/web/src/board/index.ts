@@ -5,7 +5,10 @@ import { bindMobilePan, bindBoardInput, bindLongPressMenu } from "./input";
 import { initShell } from "./sidebar";
 import { applyPan } from "./pan";
 import { loadConfig } from "./utils";
-import { openTaskModal } from "./taskModal"; // ✅ add this
+import { openTaskModal } from "./taskModal";
+import { scheduleLiveSync } from "./liveSync";
+import { loadBoard, scheduleSave, hydrateEngine } from "./storage";
+import { syncBoardState } from "./api";
 
 document.addEventListener("DOMContentLoaded", async () => {
   const counter = { firstDayOpenIndex: 0 };
@@ -18,13 +21,28 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const engine = new Engine();
 
+  // Load saved state BEFORE seeding
+  const savedBoard = await loadBoard();
+
+  if (savedBoard) {
+    hydrateEngine(engine, savedBoard);
+  } else {
+    // First run: seed default content
+    engine.createStack(snapToGrid(80, 250), [spawn("deck.first_day")]);
+    engine.createStack(snapToGrid(80, 410), [spawn("deck.organization")]);
+    engine.createStack(snapToGrid(80, 570), [spawn("deck.survival")]);
+
+    engine.createStack(snapToGrid(420, 420), [spawn("villager.basic", { name: "Flicker" })]);
+    engine.createStack(snapToGrid(540, 420), [spawn("villager.basic", { name: "Pip" })]);
+  }
+
   mountBoard(engine, boardEl);
   initShell(engine, boardRoot);
   bindMobilePan(boardRoot, boardEl);
   bindBoardInput(engine, boardRoot, boardEl, cfg, counter);
   bindLongPressMenu(engine, boardRoot);
 
-  // ✅ handle task-info events emitted by render.ts
+  // Handle task-info events emitted by render.ts
   boardRoot.addEventListener("donegeon:task-info", (e) => {
     const ev = e as CustomEvent<{ stackId: string; cardIndex: number }>;
     const { stackId, cardIndex } = ev.detail;
@@ -33,16 +51,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     void openTaskModal({ engine, stackId, cardIndex });
   });
 
-  // Seed: decks
-  engine.createStack(snapToGrid(80, 250), [spawn("deck.first_day")]);
-  engine.createStack(snapToGrid(80, 410), [spawn("deck.organization")]);
-  engine.createStack(snapToGrid(80, 570), [spawn("deck.survival")]);
+  // Set up auto-save on engine events
+  engine.events.on(() => scheduleSave(engine));
 
-  // Seed: villagers
+  // Sync initial state to server
+  syncBoardState(engine).catch((err) => {
+    console.warn("initial board sync failed", err);
+  });
 
-  engine.createStack(snapToGrid(420, 420), [spawn("villager.basic", { name: "Flicker" })]);
-  engine.createStack(snapToGrid(540, 420), [spawn("villager.basic", { name: "Pip" })]);
-  console.log(">>>>>> seeded villagers: ");
+  scheduleLiveSync(engine, 0);
 
   (window as any).__engine = engine;
 });

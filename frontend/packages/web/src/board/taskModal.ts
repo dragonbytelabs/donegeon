@@ -3,6 +3,7 @@ import type { CardEntity } from "@donegeon/core";
 import { donegeonDefs } from "../model/catalog";
 import type { TaskDTO, ModifierSchema, ModalRefs, TaskModifierSlotDTO } from "../model/types";
 import { updateCard } from "./immut";
+import { scheduleLiveSync } from "./liveSync";
 
 function schemaFromModifiers(mods: TaskModifierSlotDTO[]): ModifierSchema {
   let showDueDate = false
@@ -230,8 +231,7 @@ function ensureModalMounted() {
             d.recurrence = saved.recurrence;
 
             delete d.draft;
-          },
-        });
+          }});
 
         // keep ctx updated if you hit Save again while modal stays open
         ctx.existingTaskId = saved.id;
@@ -255,6 +255,8 @@ function ensureModalMounted() {
           },
         });
       }
+
+      scheduleLiveSync(ctx.engine);
 
       close();
     } catch (e: any) {

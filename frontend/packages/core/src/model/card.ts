@@ -1,10 +1,10 @@
 import { Entity } from "./entity";
 import type { CardData, CardDef, CardId } from "./types";
 
-export class CardEntity extends Entity {
+export class CardEntity<K extends string = string> extends Entity {
   constructor(
     id: CardId,
-    public readonly def: CardDef,
+    public readonly def: CardDef<K>,
     public data: CardData = {}
   ) {
     super(id);
@@ -17,7 +17,7 @@ export class CardEntity extends Entity {
   get icon() {
     return this.def.icon;
   }
-  get kind() {
+  get kind(): K {
     return this.def.kind;
   }
   get skinClass() {

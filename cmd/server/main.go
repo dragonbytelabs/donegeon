@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"donegeon/internal/board"
 	"donegeon/internal/config"
 	"donegeon/internal/task"
 	"donegeon/ui/page"
@@ -23,12 +24,23 @@ func main() {
 	// Static assets
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	// ---- Task API (NEW) ----
-	repo := task.NewMemoryRepo()
-	h := task.NewHandler(repo)
+	// ---- Task API ----
+	taskRepo := task.NewMemoryRepo()
+	taskHandler := task.NewHandler(taskRepo)
 
-	mux.HandleFunc("/api/tasks", h.TasksRoot) // POST /api/tasks
-	mux.HandleFunc("/api/tasks/", h.TasksSub) // GET/PATCH /api/tasks/{id}, PUT /api/tasks/{id}/modifiers
+	mux.HandleFunc("/api/tasks", taskHandler.TasksRoot)      // POST /api/tasks
+	mux.HandleFunc("/api/tasks/", taskHandler.TasksSub)      // GET/PATCH /api/tasks/{id}, PUT /api/tasks/{id}/modifiers
+	mux.HandleFunc("/api/tasks/live", taskHandler.TasksLive) // PUT /api/tasks/live
+
+	// ---- Board API ----
+	boardRepo, err := board.NewFileRepo("data/boards")
+	if err != nil {
+		log.Fatalf("init board repo: %v", err)
+	}
+	boardHandler := board.NewHandler(boardRepo, cfg)
+
+	mux.HandleFunc("/api/board/state", boardHandler.GetState) // GET /api/board/state
+	mux.HandleFunc("/api/board/cmd", boardHandler.Command)    // POST /api/board/cmd
 
 	// API: expose config to frontend (read-only)
 	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
