@@ -8,6 +8,7 @@ import { spawn } from "../model/catalog";
 import { scheduleLiveSync } from "./liveSync";
 import { scheduleSave } from "./storage";
 import { cmdStackMove, cmdStackMerge, cmdStackSplit } from "./api";
+import { addLoot, isCollectableLoot } from "./inventory";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
 const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click
@@ -369,6 +370,27 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     if (didMove) {
       const target = bestMergeTarget(engine, ended.stackId);
       if (target) {
+        // Check if dropping on collect deck
+        const targetStack = engine.getStack(target);
+        const sourceStack = engine.getStack(ended.stackId);
+        const targetTopCard = targetStack?.topCard();
+        const sourceTopCard = sourceStack?.topCard();
+
+        if (targetTopCard?.def.id === "deck.collect" && sourceTopCard) {
+          // Check if source is collectable loot
+          const lootType = isCollectableLoot(sourceTopCard.def.id);
+          if (lootType) {
+            // Collect the loot into inventory
+            addLoot(lootType, 1);
+            // Remove the source stack (it's been collected)
+            engine.removeStack(ended.stackId);
+            scheduleLiveSync(engine);
+            scheduleSave(engine);
+            return;
+          }
+        }
+
+        // Normal merge behavior
         engine.mergeStacks(target, ended.stackId);
         ensureTaskFaceCard(engine, target);
         scheduleLiveSync(engine);

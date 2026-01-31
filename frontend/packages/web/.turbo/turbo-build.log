@@ -1,12 +1,12 @@
 $ vite build
 vite v7.3.1 building client environment for production...
 transforming...
-✓ 35 modules transformed.
+✓ 36 modules transformed.
 rendering chunks...
 computing gzip size...
 ../../../static/js/tasks.js   4.88 kB │ gzip:  1.88 kB
-../../../static/js/board.js  41.26 kB │ gzip: 14.43 kB
-✓ built in 217ms
+../../../static/js/board.js  42.72 kB │ gzip: 14.83 kB
+✓ built in 255ms
 
 PWA v1.2.0
 Building src/sw/sw.ts service worker ("es" format)...
@@ -16,11 +16,11 @@ transforming...
 rendering chunks...
 computing gzip size...
 ../../../static/js/sw.mjs  17.49 kB │ gzip: 5.79 kB
-✓ built in 942ms
+✓ built in 988ms
 
 PWA v1.2.0
 mode      injectManifest
 format:   es
-precache  2 entries (45.05 KiB)
+precache  2 entries (46.48 KiB)
 files generated
   ../../../static/js/sw.js

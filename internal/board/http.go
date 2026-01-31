@@ -7,18 +7,21 @@ import (
 
 	"donegeon/internal/config"
 	"donegeon/internal/model"
+	"donegeon/internal/task"
 )
 
 // Handler handles board-related HTTP requests.
 type Handler struct {
 	repo      Repo
+	taskRepo  task.Repo
 	validator *Validator
 }
 
 // NewHandler creates a new board handler.
-func NewHandler(repo Repo, cfg *config.Config) *Handler {
+func NewHandler(repo Repo, taskRepo task.Repo, cfg *config.Config) *Handler {
 	return &Handler{
 		repo:      repo,
+		taskRepo:  taskRepo,
 		validator: NewValidator(cfg),
 	}
 }
@@ -215,6 +218,14 @@ func (h *Handler) executeCommand(state *model.BoardState, cmd string, args map[s
 		return h.cmdStackUnstack(state, args)
 	case "task.create_blank":
 		return h.cmdTaskCreateBlank(state, args)
+	case "task.set_title":
+		return h.cmdTaskSetTitle(state, args)
+	case "task.set_description":
+		return h.cmdTaskSetDescription(state, args)
+	case "task.add_modifier":
+		return h.cmdTaskAddModifier(state, args)
+	case "task.assign_villager":
+		return h.cmdTaskAssignVillager(state, args)
 	default:
 		return nil, fmt.Errorf("unknown command: %s", cmd)
 	}
@@ -414,17 +425,169 @@ func (h *Handler) cmdTaskCreateBlank(state *model.BoardState, args map[string]an
 		return nil, err
 	}
 
-	// Create a blank task card
+	// Create task in task repo first (so it appears in /tasks view)
+	var taskID model.TaskID
+	if h.taskRepo != nil {
+		inbox := "inbox"
+		t, err := h.taskRepo.Create(model.Task{
+			Title:       "",
+			Description: "",
+			Project:     &inbox,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create task: %w", err)
+		}
+		taskID = t.ID
+
+		// Mark as live (on board)
+		_ = h.taskRepo.SetLive(taskID, true)
+	}
+
+	// Create a blank task card with inbox as default zone
 	card := state.CreateCard("task.blank", map[string]any{
 		"title":       "",
 		"description": "",
+		"project":     "inbox",
+		"taskId":      string(taskID), // Link to task repo
 	})
 
 	// Create a stack with the task card
 	stack := state.CreateStack(model.Point{X: x, Y: y}, []model.CardID{card.ID})
 
 	return map[string]any{
-		"stack": stack,
-		"card":  card,
+		"stack":  stack,
+		"card":   card,
+		"taskId": taskID,
+	}, nil
+}
+
+// task.set_title { taskCardId, title }
+func (h *Handler) cmdTaskSetTitle(state *model.BoardState, args map[string]any) (any, error) {
+	cardID, err := getString(args, "taskCardId")
+	if err != nil {
+		return nil, err
+	}
+	title, err := getString(args, "title")
+	if err != nil {
+		return nil, err
+	}
+
+	card := state.GetCard(model.CardID(cardID))
+	if card == nil {
+		return nil, fmt.Errorf("card not found: %s", cardID)
+	}
+
+	if card.Data == nil {
+		card.Data = make(map[string]any)
+	}
+	card.Data["title"] = title
+
+	// Sync to task repo if linked
+	if h.taskRepo != nil {
+		if taskIDStr, ok := card.Data["taskId"].(string); ok && taskIDStr != "" {
+			_, _ = h.taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Title: &title})
+		}
+	}
+
+	return map[string]any{
+		"card": card,
+	}, nil
+}
+
+// task.set_description { taskCardId, description }
+func (h *Handler) cmdTaskSetDescription(state *model.BoardState, args map[string]any) (any, error) {
+	cardID, err := getString(args, "taskCardId")
+	if err != nil {
+		return nil, err
+	}
+	description, err := getString(args, "description")
+	if err != nil {
+		return nil, err
+	}
+
+	card := state.GetCard(model.CardID(cardID))
+	if card == nil {
+		return nil, fmt.Errorf("card not found: %s", cardID)
+	}
+
+	if card.Data == nil {
+		card.Data = make(map[string]any)
+	}
+	card.Data["description"] = description
+
+	// Sync to task repo if linked
+	if h.taskRepo != nil {
+		if taskIDStr, ok := card.Data["taskId"].(string); ok && taskIDStr != "" {
+			_, _ = h.taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Description: &description})
+		}
+	}
+
+	return map[string]any{
+		"card": card,
+	}, nil
+}
+
+// task.add_modifier { taskStackId, modifierDefId }
+func (h *Handler) cmdTaskAddModifier(state *model.BoardState, args map[string]any) (any, error) {
+	stackID, err := getString(args, "taskStackId")
+	if err != nil {
+		return nil, err
+	}
+	modifierDefID, err := getString(args, "modifierDefId")
+	if err != nil {
+		return nil, err
+	}
+
+	stack := state.GetStack(model.StackID(stackID))
+	if stack == nil {
+		return nil, fmt.Errorf("stack not found: %s", stackID)
+	}
+
+	// Validate modifier can be added
+	if h.validator != nil {
+		if err := h.validator.ValidateModifierAdd(state, model.StackID(stackID), model.CardDefID(modifierDefID)); err != nil {
+			return nil, err
+		}
+	}
+
+	// Create modifier card
+	modCard := state.CreateCard(model.CardDefID(modifierDefID), nil)
+
+	// Add to stack
+	stack.Cards = append(stack.Cards, modCard.ID)
+
+	return map[string]any{
+		"stack":    stack,
+		"modifier": modCard,
+	}, nil
+}
+
+// task.assign_villager { taskStackId, villagerStackId }
+func (h *Handler) cmdTaskAssignVillager(state *model.BoardState, args map[string]any) (any, error) {
+	taskStackID, err := getString(args, "taskStackId")
+	if err != nil {
+		return nil, err
+	}
+	villagerStackID, err := getString(args, "villagerStackId")
+	if err != nil {
+		return nil, err
+	}
+
+	taskStack := state.GetStack(model.StackID(taskStackID))
+	if taskStack == nil {
+		return nil, fmt.Errorf("task stack not found: %s", taskStackID)
+	}
+
+	villagerStack := state.GetStack(model.StackID(villagerStackID))
+	if villagerStack == nil {
+		return nil, fmt.Errorf("villager stack not found: %s", villagerStackID)
+	}
+
+	// Merge villager stack into task stack
+	state.MergeStacks(model.StackID(taskStackID), model.StackID(villagerStackID))
+
+	return map[string]any{
+		"stack":           taskStack,
+		"removedVillager": villagerStackID,
 	}, nil
 }

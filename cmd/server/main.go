@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("init board repo: %v", err)
 	}
-	boardHandler := board.NewHandler(boardRepo, cfg)
+	boardHandler := board.NewHandler(boardRepo, taskRepo, cfg)
 
 	mux.HandleFunc("/api/board/state", boardHandler.GetState) // GET /api/board/state
 	mux.HandleFunc("/api/board/cmd", boardHandler.Command)    // POST /api/board/cmd

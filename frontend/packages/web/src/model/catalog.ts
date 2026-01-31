@@ -39,6 +39,14 @@ export const donegeonDefs = {
         leftBadge: "LOCK",
         rightBadge: "LVL 5",
     },
+    "deck.collect": {
+        id: "deck.collect",
+        kind: "deck",
+        title: "Collect",
+        icon: "📥",
+        skin: "sl-kind-coin",
+        leftBadge: "DROP",
+    },
 
     // -------------------------
     // Villagers

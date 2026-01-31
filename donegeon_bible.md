@@ -152,6 +152,22 @@ The backend must enforce these; the frontend may only display hints.
 
 ## 8) Decision log
 
+### 2026-01-31
+- Implemented Go domain models: `Card`, `Stack`, `BoardState` in `internal/model/`
+- Added board API endpoints: `GET /api/board/state`, `PUT /api/board/state` (sync), `POST /api/board/cmd`
+- Implemented all v0.1 stack commands: `stack.move`, `stack.merge`, `stack.split`, `stack.unstack`, `stack.bringToFront`
+- Implemented task commands: `task.create_blank`, `task.set_title`, `task.set_description`, `task.add_modifier`, `task.assign_villager`
+- File-based persistence for board state in `data/boards/`
+- IndexedDB (idb) stores board state in browser for offline/optimistic updates
+- Frontend syncs state to server on load via `PUT /api/board/state`
+- Board task cards sync to task repository (appear in `/tasks` view)
+- Validation rules enforced server-side: max modifiers, duplicate rules, global uniqueness, stacking rules
+
+### 2026-01-30
+- IndexedDB (idb) stores board state in browser for offline persistence
+- Frontend-only persistence accepted; Go syncs only task data for now
+- Board state saved: stacks, positions, z-index, card arrangements
+
 ### 2026-01-25
 - Go is the source of truth; templ renders HTML; minimal TS for pointer interactions.
 - The TypeScript engine described in `llm.md` is treated as a **spec**; we implement the same stack ops in Go.

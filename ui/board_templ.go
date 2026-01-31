@@ -34,15 +34,23 @@ func Board(boardConfig config.BoardUIConfig) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid h-full w-full grid-rows-[48px_1fr]\"><header class=\"flex items-center justify-between border-b border-border bg-card/60 px-3 backdrop-blur\"><div class=\"flex items-center gap-2\"><button id=\"sidebarToggle\" class=\"rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent\" type=\"button\">Sidebar</button><div class=\"text-sm font-semibold\">Donegeon Playground</div></div><div class=\"text-xs text-muted-foreground\">Drag stacks • Merge • Shift+Drag split • Unstack button</div></header><div id=\"appShell\" class=\"grid h-full w-full min-w-0 grid-cols-1 md:grid-cols-[260px_1fr]\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"grid h-full w-full grid-rows-[48px_1fr]\"><!-- Header with loot inventory --><header class=\"flex items-center justify-between border-b border-border bg-card/80 px-3 backdrop-blur\"><div class=\"flex items-center gap-3\"><!-- Mobile hamburger menu --><button id=\"goalsMenuToggle\" class=\"rounded-md border border-border bg-card px-2 py-1.5 hover:bg-accent md:hidden\" type=\"button\" aria-label=\"Toggle goals menu\"><svg class=\"h-4 w-4\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M4 6h16M4 12h16M4 18h16\"></path></svg></button><div class=\"text-sm font-bold tracking-wide\">DONEGEON</div></div><!-- Loot inventory --><div id=\"lootInventory\" class=\"flex items-center gap-4 text-sm\"><div class=\"flex items-center gap-1\" title=\"Coins\"><span>🪙</span> <span id=\"loot-coin\" class=\"font-semibold\">0</span></div><div class=\"flex items-center gap-1\" title=\"Wood\"><span>🪵</span> <span id=\"loot-wood\" class=\"font-semibold\">0</span></div></div><!-- Action buttons --><div class=\"flex items-center gap-2\"><button class=\"rounded-md border border-red-500/50 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/20\">End Day</button> <button class=\"rounded-md border border-border bg-card px-3 py-1 text-xs hover:bg-accent\">Refresh</button> <button class=\"rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent\">?</button></div></header><div id=\"appShell\" class=\"flex h-full w-full min-w-0 overflow-hidden\"><!-- Today's Goals sidebar (desktop only - hidden on mobile) --><aside id=\"goalsSidebarDesktop\" class=\"w-[280px] shrink-0 h-full border-r border-border bg-zinc-900/95 overflow-y-auto max-md:hidden\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = Sidebar().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = TodaysGoalsSidebar().Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div id=\"sidebarBackdrop\" class=\"fixed inset-0 z-40 hidden bg-black/50 md:hidden\"></div><main class=\"relative h-full w-full min-w-0 overflow-hidden md:col-start-2\"><div id=\"boardRoot\" class=\"relative h-full w-full min-w-0 dotted-field\" style=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</aside><!-- Mobile goals drawer (fixed overlay) --><aside id=\"goalsSidebarMobile\" class=\"\n\t\t\t\t\tfixed inset-y-0 left-0 z-50 w-[280px]\n\t\t\t\t\t-translate-x-full transition-transform duration-200\n\t\t\t\t\tborder-r border-border bg-zinc-900/95 backdrop-blur\n\t\t\t\t\toverflow-y-auto flex flex-col\n\t\t\t\t\tmd:hidden\n\t\t\t\t\">")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = TodaysGoalsSidebarContent().Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</aside><!-- Mobile goals drawer backdrop --><div id=\"goalsBackdrop\" class=\"fixed inset-0 z-40 hidden bg-black/50 md:hidden\"></div><!-- Main board area --><main class=\"relative flex-1 h-full min-w-0 overflow-hidden\"><div id=\"boardRoot\" class=\"relative h-full w-full min-w-0 dotted-field\" style=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -52,13 +60,13 @@ func Board(boardConfig config.BoardUIConfig) templ.Component {
 			" --ui-card-h:" + strconv.Itoa(boardConfig.CardHeight) + "px;" +
 			" --ui-stack-off-y:" + strconv.Itoa(boardConfig.StackOffsetY) + "px;")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/board.templ`, Line: 38, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `ui/board.templ`, Line: 86, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div id=\"board\" class=\"absolute inset-0\"></div><div class=\"pointer-events-none absolute bottom-4 left-4\"><div class=\"pointer-events-auto rounded-xl border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur\"><b class=\"text-foreground\">Drag</b> stacks. Drop onto another stack to merge. <span class=\"mx-2 opacity-50\">•</span> <b class=\"text-foreground\">Shift+Drag</b> split from middle.</div></div></div></main></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\"><div id=\"board\" class=\"absolute inset-0 pb-[160px]\"></div><!-- Bottom deck row --><div id=\"deckRow\" class=\"absolute bottom-0 left-0 right-0 flex items-end justify-center gap-2 bg-gradient-to-t from-black/30 to-transparent px-4 py-3\"><!-- Decks will be rendered here by JS --></div></div></main></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
