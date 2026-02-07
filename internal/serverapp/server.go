@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"donegeon/internal/auth"
+	"donegeon/internal/blueprint"
 	"donegeon/internal/board"
 	"donegeon/internal/config"
 	"donegeon/internal/httpmw"
@@ -116,6 +117,21 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.Handle("/api/tasks/", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksSub)))
 	mux.Handle("/api/tasks/live", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksLive)))
 
+	blueprintRepo, err := blueprint.NewFileRepo(filepath.Join(opts.DataDir, "blueprints"))
+	if err != nil {
+		return nil, err
+	}
+	blueprintHandler := blueprint.NewHandler(blueprintRepo)
+	blueprintHandler.SetRepoResolver(func(r *http.Request) blueprint.Repo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return blueprintRepo
+		}
+		return blueprintRepo.ForUser(u.ID)
+	})
+	mux.Handle("/api/blueprints", authService.RequireAPI(http.HandlerFunc(blueprintHandler.Root)))
+	mux.Handle("/api/blueprints/", authService.RequireAPI(http.HandlerFunc(blueprintHandler.Sub)))
+
 	questHandler := quest.NewHandler()
 	questHandler.SetTaskRepoResolver(func(r *http.Request) task.Repo {
 		u, ok := auth.UserFromContext(r.Context())
@@ -201,6 +217,9 @@ func NewHandler(opts Options) (http.Handler, error) {
 	mux.HandleFunc("/app", authService.HandleAppRoute)
 	mux.Handle("/board", authService.RequirePage(templ.Handler(page.BoardPage(opts.Config.UI.Board))))
 	mux.Handle("/tasks", authService.RequirePage(templ.Handler(page.TasksPage())))
+	mux.Handle("/builder", authService.RequirePage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/tasks#blueprints", http.StatusFound)
+	})))
 
 	return httpmw.Chain(
 		mux,

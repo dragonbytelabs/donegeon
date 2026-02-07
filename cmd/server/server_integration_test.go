@@ -68,6 +68,13 @@ func TestServer_OTPFlowAndEmbeddedStatic(t *testing.T) {
 	if pageRes.Code != http.StatusOK {
 		t.Fatalf("tasks page expected 200, got %d", pageRes.Code)
 	}
+	builderRes := app.request(http.MethodGet, "/builder", nil, "")
+	if builderRes.Code != http.StatusFound {
+		t.Fatalf("builder route expected 302, got %d", builderRes.Code)
+	}
+	if loc := builderRes.Header().Get("Location"); loc != "/tasks#blueprints" {
+		t.Fatalf("builder route expected redirect to /tasks#blueprints, got %q", loc)
+	}
 
 	staticRes := app.request(http.MethodGet, "/static/js/login.js", nil, "")
 	if staticRes.Code != http.StatusOK {

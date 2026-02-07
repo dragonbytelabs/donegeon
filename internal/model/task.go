@@ -27,6 +27,11 @@ type Task struct {
 	AssignedVillagerID *string            `json:"assignedVillagerId,omitempty"`
 	WorkedToday        bool               `json:"workedToday,omitempty"`
 	ProcessedCount     int                `json:"processedCount,omitempty"`
+	CompletionCount    int                `json:"completionCount,omitempty"`
+	Habit              bool               `json:"habit,omitempty"`
+	HabitTier          int                `json:"habitTier,omitempty"`
+	HabitStreak        int                `json:"habitStreak,omitempty"`
+	LastCompletedDate  *string            `json:"lastCompletedDate,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

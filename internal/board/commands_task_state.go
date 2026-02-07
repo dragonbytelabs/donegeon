@@ -3,6 +3,7 @@ package board
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"donegeon/internal/model"
 	"donegeon/internal/player"
@@ -78,10 +79,24 @@ func (h *Handler) cmdTaskCompleteByTaskID(state *model.BoardState, taskRepo task
 	// Fallback: if the task card isn't on the board anymore, keep task state consistent.
 	if taskRepo != nil {
 		done := true
-		if _, err := taskRepo.Update(model.TaskID(taskID), task.Patch{Done: &done}); err != nil {
+		patch := task.Patch{Done: &done}
+		habitBonusCoin := 0
+		if cur, err := taskRepo.Get(model.TaskID(taskID)); err == nil && !cur.Done {
+			habitPatch, habitResult := task.BuildHabitCompletionUpdate(cur, time.Now())
+			patch.CompletionCountDelta = habitPatch.CompletionCountDelta
+			patch.Habit = habitPatch.Habit
+			patch.HabitTier = habitPatch.HabitTier
+			patch.HabitStreak = habitPatch.HabitStreak
+			patch.LastCompletedDate = habitPatch.LastCompletedDate
+			habitBonusCoin = habitResult.BonusCoin
+		}
+		if _, err := taskRepo.Update(model.TaskID(taskID), patch); err != nil {
 			return nil, err
 		}
 		_ = taskRepo.SetLive(model.TaskID(taskID), false)
+		if habitBonusCoin > 0 && playerRepo != nil {
+			_, _ = playerRepo.AddLoot(player.LootCoin, habitBonusCoin)
+		}
 	}
 
 	return map[string]any{
@@ -181,8 +196,22 @@ func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Re
 
 	if taskRepo != nil && taskID != "" {
 		done := true
-		_, _ = taskRepo.Update(model.TaskID(taskID), task.Patch{Done: &done})
+		patch := task.Patch{Done: &done}
+		habitBonusCoin := 0
+		if cur, err := taskRepo.Get(model.TaskID(taskID)); err == nil && !cur.Done {
+			habitPatch, habitResult := task.BuildHabitCompletionUpdate(cur, time.Now())
+			patch.CompletionCountDelta = habitPatch.CompletionCountDelta
+			patch.Habit = habitPatch.Habit
+			patch.HabitTier = habitPatch.HabitTier
+			patch.HabitStreak = habitPatch.HabitStreak
+			patch.LastCompletedDate = habitPatch.LastCompletedDate
+			habitBonusCoin = habitResult.BonusCoin
+		}
+		_, _ = taskRepo.Update(model.TaskID(taskID), patch)
 		_ = taskRepo.SetLive(model.TaskID(taskID), false)
+		if habitBonusCoin > 0 && playerRepo != nil {
+			_, _ = playerRepo.AddLoot(player.LootCoin, habitBonusCoin)
+		}
 	}
 
 	xpGained := 0

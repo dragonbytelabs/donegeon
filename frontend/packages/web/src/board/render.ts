@@ -139,6 +139,7 @@ function mountStack(s: StackEntity) {
 
         const title =
           (c.def.id === "task.instance" && ((c.data as any)?.title as string | undefined)) ||
+          (c.def.id === "blueprint.instance" && ((c.data as any)?.title as string | undefined)) ||
           (draft?.title as string | undefined) ||
           c.title;
 

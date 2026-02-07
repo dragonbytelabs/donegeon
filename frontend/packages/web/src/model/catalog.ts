@@ -79,6 +79,14 @@ export const donegeonDefs = {
         skin: "sl-kind-quest",
         leftBadge: "TASK",
     },
+    "blueprint.instance": {
+        id: "blueprint.instance",
+        kind: "blueprint",
+        title: "Blueprint",
+        icon: "📐",
+        skin: "sl-kind-wood",
+        leftBadge: "BP",
+    },
 
     // -------------------------
     // Modifiers

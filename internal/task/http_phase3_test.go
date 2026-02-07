@@ -345,6 +345,55 @@ func TestTasksRoot_CreateLockedFieldsAllowedWithAttachedModifier(t *testing.T) {
 	}
 }
 
+func TestTasksSub_DoneTransitionUpdatesHabitProgress(t *testing.T) {
+	h, repo, playerRepo := newTaskHandlerForTests(t, false)
+	inbox := "inbox"
+	yesterday := "2026-02-06"
+	created, err := repo.Create(model.Task{
+		Title:             "Daily standup",
+		Project:           &inbox,
+		CompletionCount:   6,
+		Habit:             false,
+		HabitTier:         0,
+		HabitStreak:       6,
+		LastCompletedDate: &yesterday,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.TasksSub(rec, jsonReq(http.MethodPatch, "/api/tasks/"+string(created.ID), map[string]any{
+		"done": true,
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	got, err := repo.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if got.CompletionCount != 7 {
+		t.Fatalf("expected completionCount=7, got %d", got.CompletionCount)
+	}
+	if !got.Habit || got.HabitTier != 1 {
+		t.Fatalf("expected habit tier 1, got habit=%v tier=%d", got.Habit, got.HabitTier)
+	}
+	if got.HabitStreak != 7 {
+		t.Fatalf("expected habit streak 7, got %d", got.HabitStreak)
+	}
+	if got.LastCompletedDate == nil || *got.LastCompletedDate == "" {
+		t.Fatalf("expected lastCompletedDate to be set")
+	}
+	if coin := playerRepo.GetState().Loot[player.LootCoin]; coin < 2 {
+		t.Fatalf("expected habit bonus coin reward, got %d", coin)
+	}
+	if completed := playerRepo.GetMetric(player.MetricTasksCompleted); completed < 1 {
+		t.Fatalf("expected tasks completed metric incremented, got %d", completed)
+	}
+}
+
 func TestTasksSub_PatchLockedFieldsAllowedWithAttachedModifier(t *testing.T) {
 	h, repo, _ := newTaskHandlerForTests(t, false)
 	inbox := "inbox"

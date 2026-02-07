@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"donegeon/internal/config"
 	"donegeon/internal/model"
@@ -338,6 +339,9 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 			if p.Modifiers == nil && (p.DueDate != nil || p.NextAction != nil || p.Recurrence != nil) {
 				needCur = true
 			}
+			if p.Done != nil && *p.Done {
+				needCur = true
+			}
 			if p.Done != nil && *p.Done && h.completionRequiresAssignedVillager() {
 				needCur = true
 			}
@@ -400,6 +404,17 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			habitBonusCoin := 0
+			justCompleted := p.Done != nil && *p.Done && curLoaded && !cur.Done
+			if justCompleted {
+				habitPatch, habitResult := BuildHabitCompletionUpdate(cur, time.Now())
+				p.CompletionCountDelta = habitPatch.CompletionCountDelta
+				p.Habit = habitPatch.Habit
+				p.HabitTier = habitPatch.HabitTier
+				p.HabitStreak = habitPatch.HabitStreak
+				p.LastCompletedDate = habitPatch.LastCompletedDate
+				habitBonusCoin = habitResult.BonusCoin
+			}
 
 			t, err := repo.Update(model.TaskID(id), p)
 			if err == ErrTooManyMods {
@@ -413,6 +428,12 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				writeErr(w, 500, err.Error())
 				return
+			}
+			if habitBonusCoin > 0 && playerRepo != nil {
+				_, _ = playerRepo.AddLoot(player.LootCoin, habitBonusCoin)
+			}
+			if justCompleted && playerRepo != nil {
+				_, _, _ = playerRepo.IncrementMetric(player.MetricTasksCompleted, 1)
 			}
 			writeJSON(w, 200, t)
 			return
@@ -517,9 +538,21 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				WorkedToday:         &worked,
 				ProcessedCountDelta: &inc,
 			}
+			habitBonusCoin := 0
+			justCompleted := false
 			if in.MarkDone {
 				done := true
 				patch.Done = &done
+				if !cur.Done {
+					justCompleted = true
+					habitPatch, habitResult := BuildHabitCompletionUpdate(cur, time.Now())
+					patch.CompletionCountDelta = habitPatch.CompletionCountDelta
+					patch.Habit = habitPatch.Habit
+					patch.HabitTier = habitPatch.HabitTier
+					patch.HabitStreak = habitPatch.HabitStreak
+					patch.LastCompletedDate = habitPatch.LastCompletedDate
+					habitBonusCoin = habitResult.BonusCoin
+				}
 			}
 
 			updated, err := repo.Update(model.TaskID(id), patch)
@@ -530,6 +563,16 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				writeErr(w, 500, err.Error())
 				return
+			}
+			if habitBonusCoin > 0 {
+				if pRepo := h.playerForRequest(r); pRepo != nil {
+					_, _ = pRepo.AddLoot(player.LootCoin, habitBonusCoin)
+				}
+			}
+			if justCompleted {
+				if pRepo := h.playerForRequest(r); pRepo != nil {
+					_, _, _ = pRepo.IncrementMetric(player.MetricTasksCompleted, 1)
+				}
 			}
 
 			writeJSON(w, 200, map[string]any{

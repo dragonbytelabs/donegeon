@@ -33,9 +33,14 @@ type Patch struct {
 	Recurrence *model.Recurrence         `json:"recurrence,omitempty"`
 
 	// Internal fields (not exposed via JSON API directly).
-	AssignedVillagerID  *string `json:"-"`
-	WorkedToday         *bool   `json:"-"`
-	ProcessedCountDelta *int    `json:"-"`
+	AssignedVillagerID   *string `json:"-"`
+	WorkedToday          *bool   `json:"-"`
+	ProcessedCountDelta  *int    `json:"-"`
+	CompletionCountDelta *int    `json:"-"`
+	Habit                *bool   `json:"-"`
+	HabitTier            *int    `json:"-"`
+	HabitStreak          *int    `json:"-"`
+	LastCompletedDate    *string `json:"-"`
 }
 
 type ListFilter struct {
@@ -203,6 +208,34 @@ func applyPatch(t *model.Task, p Patch) error {
 			next = 0
 		}
 		t.ProcessedCount = next
+	}
+	if p.CompletionCountDelta != nil && *p.CompletionCountDelta != 0 {
+		next := t.CompletionCount + *p.CompletionCountDelta
+		if next < 0 {
+			next = 0
+		}
+		t.CompletionCount = next
+	}
+	if p.Habit != nil {
+		t.Habit = *p.Habit
+	}
+	if p.HabitTier != nil {
+		t.HabitTier = *p.HabitTier
+	}
+	if p.HabitStreak != nil {
+		next := *p.HabitStreak
+		if next < 0 {
+			next = 0
+		}
+		t.HabitStreak = next
+	}
+	if p.LastCompletedDate != nil {
+		if strings.TrimSpace(*p.LastCompletedDate) == "" {
+			t.LastCompletedDate = nil
+		} else {
+			v := strings.TrimSpace(*p.LastCompletedDate)
+			t.LastCompletedDate = &v
+		}
 	}
 
 	return nil

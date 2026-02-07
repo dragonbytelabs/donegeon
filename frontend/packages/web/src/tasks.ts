@@ -19,6 +19,20 @@ type TaskDTO = {
   assignedVillagerId?: string;
   workedToday?: boolean;
   processedCount?: number;
+  completionCount?: number;
+  habit?: boolean;
+  habitTier?: number;
+  habitStreak?: number;
+  lastCompletedDate?: string;
+};
+
+type BlueprintDTO = {
+  id: string;
+  title: string;
+  description: string;
+  modifierSlots: string[];
+  steps: string[];
+  createdAt?: string;
 };
 
 type PlayerStateDTO = {
@@ -117,6 +131,48 @@ async function apiPlayerState() {
   return (await res.json()) as PlayerStateDTO;
 }
 
+async function apiBlueprintList() {
+  const res = await fetch(`/api/blueprints`);
+  if (!res.ok) throw new Error(`GET /api/blueprints failed: ${res.status}`);
+  return (await res.json()) as BlueprintDTO[];
+}
+
+async function apiBlueprintCreate(input: Omit<BlueprintDTO, "id" | "createdAt">) {
+  const res = await fetch(`/api/blueprints`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`POST /api/blueprints failed: ${res.status}`);
+  return (await res.json()) as BlueprintDTO;
+}
+
+async function apiSpawnBlueprintToBoard(blueprint: BlueprintDTO, x: number, y: number) {
+  const res = await fetch(`/api/board/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cmd: "card.spawn",
+      args: {
+        defId: "blueprint.instance",
+        x,
+        y,
+        data: {
+          blueprintId: blueprint.id,
+          title: blueprint.title,
+          description: blueprint.description,
+          modifierSlots: blueprint.modifierSlots,
+          steps: blueprint.steps,
+        },
+      },
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || `POST /api/board/cmd failed: ${res.status}`);
+  }
+}
+
 async function apiUnlockFeature(feature: string) {
   const res = await fetch(`/api/player/unlock`, {
     method: "POST",
@@ -182,6 +238,21 @@ const editor = {
   btnClose: q<HTMLButtonElement>(panel, "[data-editor-close]"),
   btnSave: q<HTMLButtonElement>(panel, "[data-editor-save]"),
 };
+
+type BlueprintUIRefs = {
+  root: HTMLDivElement;
+  title: HTMLInputElement;
+  desc: HTMLTextAreaElement;
+  mods: HTMLInputElement;
+  steps: HTMLTextAreaElement;
+  createBtn: HTMLButtonElement;
+  sampleBtn: HTMLButtonElement;
+  list: HTMLDivElement;
+  err: HTMLDivElement;
+};
+
+let blueprintUI: BlueprintUIRefs | null = null;
+let blueprints: BlueprintDTO[] = [];
 
 let unlockButtons:
   | {
@@ -265,6 +336,130 @@ function applyEditorGates() {
   editor.recInv.disabled = !recOpen;
   btns.recurrence.style.display = recOpen ? "none" : "";
   btns.recurrence.textContent = `Unlock (${unlockCost(FEATURE_RECURRENCE)} 🪙)`;
+}
+
+function ensureBlueprintUI(): BlueprintUIRefs {
+  if (blueprintUI) return blueprintUI;
+  const page = document.querySelector(".mx-auto.max-w-5xl") as HTMLDivElement | null;
+  if (!page) throw new Error("Missing tasks page root");
+
+  const root = document.createElement("div");
+  root.id = "blueprints";
+  root.className = "mt-6 rounded-lg border border-border bg-card p-4";
+  root.innerHTML = `
+    <div class="mb-3">
+      <div class="text-sm font-semibold">Blueprint Workshop</div>
+      <div class="text-xs opacity-70">Create reusable planning cards, then spawn them to the board.</div>
+    </div>
+    <div class="grid gap-2 md:grid-cols-2">
+      <div>
+        <label class="text-xs opacity-70">Title</label>
+        <input data-bp-title class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Create a new coding project" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Modifier slots (comma-separated)</label>
+        <input data-bp-mods class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="mod.next_action, mod.deadline_pin, mod.recurring" />
+      </div>
+    </div>
+    <div class="mt-2">
+      <label class="text-xs opacity-70">Description</label>
+      <textarea data-bp-desc rows="2" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Plan repo setup, scaffold app, write task plan, and align milestones."></textarea>
+    </div>
+    <div class="mt-2">
+      <label class="text-xs opacity-70">Steps (one per line)</label>
+      <textarea data-bp-steps rows="4" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Create GitHub repo&#10;Run create-vite&#10;Setup server baseline&#10;Write task.md plan"></textarea>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <button data-bp-create type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">Create Blueprint</button>
+      <button data-bp-sample type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">Load Sample</button>
+      <div data-bp-err class="text-xs text-red-300"></div>
+    </div>
+    <div data-bp-list class="mt-4 space-y-2"></div>
+  `;
+  page.appendChild(root);
+
+  blueprintUI = {
+    root,
+    title: q<HTMLInputElement>(root, "[data-bp-title]"),
+    desc: q<HTMLTextAreaElement>(root, "[data-bp-desc]"),
+    mods: q<HTMLInputElement>(root, "[data-bp-mods]"),
+    steps: q<HTMLTextAreaElement>(root, "[data-bp-steps]"),
+    createBtn: q<HTMLButtonElement>(root, "[data-bp-create]"),
+    sampleBtn: q<HTMLButtonElement>(root, "[data-bp-sample]"),
+    list: q<HTMLDivElement>(root, "[data-bp-list]"),
+    err: q<HTMLDivElement>(root, "[data-bp-err]"),
+  };
+  return blueprintUI;
+}
+
+function renderBlueprintList() {
+  const ui = ensureBlueprintUI();
+  ui.list.innerHTML = "";
+  if (blueprints.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "text-xs opacity-70";
+    empty.textContent = "No blueprints yet.";
+    ui.list.appendChild(empty);
+    return;
+  }
+
+  blueprints.forEach((bp, index) => {
+    const row = document.createElement("div");
+    row.className = "rounded-md border border-border bg-background px-3 py-2";
+
+    const top = document.createElement("div");
+    top.className = "flex items-center gap-2";
+    const title = document.createElement("div");
+    title.className = "text-sm font-medium";
+    title.textContent = bp.title;
+    const badge = document.createElement("span");
+    badge.className = "rounded-full border border-border px-2 py-0.5 text-[10px] opacity-70";
+    badge.textContent = `slots ${bp.modifierSlots.length}`;
+    top.append(title, badge);
+
+    const desc = document.createElement("div");
+    desc.className = "mt-1 text-xs opacity-75";
+    desc.textContent = bp.description || "(no description)";
+
+    const steps = document.createElement("div");
+    steps.className = "mt-1 text-xs opacity-70";
+    steps.textContent = bp.steps.length > 0 ? `Steps: ${bp.steps.join(" -> ")}` : "Steps: (none)";
+
+    const actions = document.createElement("div");
+    actions.className = "mt-2 flex items-center gap-2";
+    const spawnBtn = document.createElement("button");
+    spawnBtn.type = "button";
+    spawnBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent";
+    spawnBtn.textContent = "Spawn To Board";
+    spawnBtn.addEventListener("click", async () => {
+      try {
+        const x = 220 + (index % 5) * 120;
+        const y = 180 + (Math.floor(index / 5) % 4) * 120;
+        await apiSpawnBlueprintToBoard(bp, x, y);
+        window.location.href = "/board";
+      } catch (err: any) {
+        alert(String(err?.message ?? err));
+      }
+    });
+    actions.appendChild(spawnBtn);
+
+    row.append(top, desc, steps, actions);
+    ui.list.appendChild(row);
+  });
+}
+
+async function refreshBlueprints() {
+  blueprints = await apiBlueprintList();
+  renderBlueprintList();
+}
+
+function collectBlueprintInput() {
+  const ui = ensureBlueprintUI();
+  const title = ui.title.value.trim();
+  const description = ui.desc.value.trim();
+  const modifierSlots = ui.mods.value.split(",").map((s) => s.trim()).filter(Boolean);
+  const steps = ui.steps.value.split("\n").map((s) => s.trim()).filter(Boolean);
+  return { title, description, modifierSlots, steps };
 }
 
 async function unlockFeature(feature: string) {
@@ -385,7 +580,18 @@ function render(tasks: TaskDTO[]) {
     title.textContent = t.title || "(untitled)";
     desc.textContent = t.description || "";
     proj.textContent = (t.project && t.project.trim()) ? t.project : "inbox";
-    due.textContent = t.dueDate ? `Due ${t.dueDate}` : "";
+    const habitBits: string[] = [];
+    if (t.habit) {
+      habitBits.push(`Habit T${Math.max(1, Number(t.habitTier ?? 1))}`);
+    }
+    if ((t.habitStreak ?? 0) > 0) {
+      habitBits.push(`Streak ${t.habitStreak}`);
+    }
+    if ((t.completionCount ?? 0) > 0) {
+      habitBits.push(`Completions ${t.completionCount}`);
+    }
+    const right = t.dueDate ? `Due ${t.dueDate}` : "";
+    due.textContent = [right, ...habitBits].filter(Boolean).join(" • ");
 
     // Toggle done (stop row click)
     done.addEventListener("click", (e) => e.stopPropagation());
@@ -458,31 +664,39 @@ function render(tasks: TaskDTO[]) {
 }
 
 async function refresh() {
-  const [tasks, state] = await Promise.all([
+  const [tasks, state, bp] = await Promise.all([
     apiList({
       status: statusSel.value,
       project: projectSel.value,
       live: liveChk.checked,
     }),
     apiPlayerState(),
+    apiBlueprintList(),
   ]);
   playerState = state;
+  blueprints = bp;
   renderPlayerState();
   const open = !overlay.classList.contains("hidden");
   if (open) applyEditorGates();
   render(tasks);
+  renderBlueprintList();
 }
 
 async function initialLoad() {
   if (!playerState) {
     await loadPlayerState();
   }
-  const tasks = await apiList({
-    status: statusSel.value,
-    project: projectSel.value,
-    live: liveChk.checked,
-  });
+  const [tasks, bp] = await Promise.all([
+    apiList({
+      status: statusSel.value,
+      project: projectSel.value,
+      live: liveChk.checked,
+    }),
+    apiBlueprintList(),
+  ]);
+  blueprints = bp;
   render(tasks);
+  renderBlueprintList();
 }
 
 // ---------- wire up ----------
@@ -500,6 +714,13 @@ function initOnce() {
   const on = (target: EventTarget, type: string, handler: any, opts?: AddEventListenerOptions) => {
     target.addEventListener(type, handler, { ...opts, signal: controller.signal });
   };
+
+  const bpUI = ensureBlueprintUI();
+  if (window.location.hash === "#blueprints") {
+    window.setTimeout(() => {
+      bpUI.root.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
 
   on(overlay, "pointerdown", (e: PointerEvent) => {
     if (e.target === overlay) closeEditor();
@@ -558,6 +779,35 @@ function initOnce() {
 
   on(newBtn, "click", () => {
     void openEditor();
+  });
+  on(bpUI.sampleBtn, "click", () => {
+    bpUI.title.value = "Create a new coding project";
+    bpUI.desc.value = "Set up repository, scaffold app, and produce a concrete task plan for execution.";
+    bpUI.mods.value = "mod.next_action, mod.deadline_pin, mod.recurring";
+    bpUI.steps.value = [
+      "Create GitHub repository",
+      "Run create-vite and scaffold server",
+      "Create task.md execution plan",
+      "Define milestone tasks and owners",
+    ].join("\n");
+  });
+  on(bpUI.createBtn, "click", async () => {
+    bpUI.err.textContent = "";
+    try {
+      const payload = collectBlueprintInput();
+      if (!payload.title) {
+        bpUI.err.textContent = "Blueprint title is required.";
+        return;
+      }
+      await apiBlueprintCreate(payload);
+      bpUI.title.value = "";
+      bpUI.desc.value = "";
+      bpUI.mods.value = "";
+      bpUI.steps.value = "";
+      await refreshBlueprints();
+    } catch (err: any) {
+      bpUI.err.textContent = String(err?.message ?? err);
+    }
   });
   on(refreshBtn, "click", () => {
     void refresh();
