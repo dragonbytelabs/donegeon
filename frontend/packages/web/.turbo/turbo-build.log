@@ -6,8 +6,8 @@ rendering chunks...
 computing gzip size...
 ../../../static/js/login.js   1.60 kB │ gzip:  0.75 kB
 ../../../static/js/tasks.js   9.48 kB │ gzip:  3.22 kB
-../../../static/js/board.js  51.47 kB │ gzip: 17.08 kB
-✓ built in 572ms
+../../../static/js/board.js  51.60 kB │ gzip: 17.13 kB
+✓ built in 597ms
 
 PWA v1.2.0
 Building src/sw/sw.ts service worker ("es" format)...
@@ -17,11 +17,11 @@ transforming...
 rendering chunks...
 computing gzip size...
 ../../../static/js/sw.mjs  17.49 kB │ gzip: 5.79 kB
-✓ built in 1.15s
+✓ built in 1.01s
 
 PWA v1.2.0
 mode      injectManifest
 format:   es
-precache  3 entries (61.09 KiB)
+precache  3 entries (61.21 KiB)
 files generated
   ../../../static/js/sw.js

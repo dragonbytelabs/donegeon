@@ -348,7 +348,9 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     const top = s.topCard();
     if (!top) return;
 
-    if (top.def.id === "deck.first_day") {
+    const isDeckCard = top.def.kind === "deck" && !top.def.id.endsWith("_pack");
+    const canSpawnPack = isDeckCard && top.def.id !== "deck.collect";
+    if (canSpawnPack) {
       const br = boardRoot.getBoundingClientRect();
       const cx = br.left + br.width * 0.55;
       const cy = br.top + br.height * 0.45;
@@ -365,9 +367,13 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
       return;
     }
 
-    if (top.def.id === "deck.first_day_pack") {
-      void cmdDeckOpenPack(stackId, "deck.first_day")
+    if (top.def.id.endsWith("_pack")) {
+      const deckIdFromPack = typeof (top.data as any)?.deckId === "string"
+        ? String((top.data as any).deckId)
+        : "deck.first_day";
+      void cmdDeckOpenPack(stackId, deckIdFromPack)
         .then(() => reloadBoard(engine))
+        .then(() => refreshInventory())
         .then(() => scheduleLiveSync(engine))
         .catch((err) => {
           console.warn("deck open sync failed", err);

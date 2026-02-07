@@ -226,3 +226,114 @@ func TestTasksSub_ProcessConsumesStaminaUntilDepleted(t *testing.T) {
 		t.Fatalf("expected process with depleted stamina to fail with 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestTasksRoot_CreateLockedFieldsAllowedWithAttachedModifier(t *testing.T) {
+	h, _, _ := newTaskHandlerForTests(t, false)
+
+	tests := []struct {
+		name string
+		body map[string]any
+	}{
+		{
+			name: "due date allowed by deadline pin",
+			body: map[string]any{
+				"title":   "A",
+				"dueDate": "2026-02-08",
+				"modifiers": []any{
+					map[string]any{"defId": "deadline_pin"},
+				},
+			},
+		},
+		{
+			name: "next action allowed by next action modifier",
+			body: map[string]any{
+				"title":      "B",
+				"nextAction": true,
+				"modifiers": []any{
+					map[string]any{"defId": "mod.next_action"},
+				},
+			},
+		},
+		{
+			name: "recurrence allowed by recurring modifier",
+			body: map[string]any{
+				"title":      "C",
+				"recurrence": map[string]any{"type": "weekly", "interval": 1},
+				"modifiers": []any{
+					map[string]any{"defId": "mod.recurring"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.TasksRoot(rec, jsonReq(http.MethodPost, "/api/tasks", tc.body))
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestTasksSub_PatchLockedFieldsAllowedWithAttachedModifier(t *testing.T) {
+	h, repo, _ := newTaskHandlerForTests(t, false)
+	inbox := "inbox"
+
+	makeTask := func(title string, mods []model.TaskModifierSlot) model.Task {
+		t.Helper()
+		created, err := repo.Create(model.Task{
+			Title:     title,
+			Project:   &inbox,
+			Modifiers: mods,
+		})
+		if err != nil {
+			t.Fatalf("create task %q: %v", title, err)
+		}
+		return created
+	}
+
+	withPatch := func(id model.TaskID, body map[string]any) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.TasksSub(rec, jsonReq(http.MethodPatch, "/api/tasks/"+string(id), body))
+		return rec
+	}
+
+	t.Run("due date allowed when modifier supplied in same patch", func(t *testing.T) {
+		task := makeTask("due", nil)
+		rec := withPatch(task.ID, map[string]any{
+			"dueDate": "2026-02-08",
+			"modifiers": []any{
+				map[string]any{"defId": "mod.deadline_pin"},
+			},
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("next action allowed when modifier already attached", func(t *testing.T) {
+		task := makeTask("next", []model.TaskModifierSlot{
+			{DefID: "mod.next_action"},
+		})
+		rec := withPatch(task.ID, map[string]any{
+			"nextAction": true,
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("recurrence allowed when recurring modifier already attached", func(t *testing.T) {
+		task := makeTask("rec", []model.TaskModifierSlot{
+			{DefID: "mod.recurring_contract"},
+		})
+		rec := withPatch(task.ID, map[string]any{
+			"recurrence": map[string]any{"type": "weekly", "interval": 2},
+		})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}

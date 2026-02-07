@@ -10,6 +10,8 @@ import (
 
 	"donegeon/internal/config"
 	"donegeon/internal/model"
+	"donegeon/internal/player"
+	"donegeon/internal/task"
 )
 
 type drawnCard struct {
@@ -122,7 +124,9 @@ func (h *Handler) cmdDeckSpawnPack(state *model.BoardState, args map[string]any)
 		return nil, fmt.Errorf("stack is not a deck: %s", deckStackID)
 	}
 
-	stack := h.createSingleCardStack(state, packDefID, model.Point{X: x, Y: y}, nil)
+	stack := h.createSingleCardStack(state, packDefID, model.Point{X: x, Y: y}, map[string]any{
+		"deckId": string(top.DefID),
+	})
 	packCard := state.GetCard(stack.Cards[len(stack.Cards)-1])
 	return map[string]any{
 		"stack": stack,
@@ -131,7 +135,7 @@ func (h *Handler) cmdDeckSpawnPack(state *model.BoardState, args map[string]any)
 }
 
 // deck.open_pack { packStackId, deckId, radius?, seed? }
-func (h *Handler) cmdDeckOpenPack(state *model.BoardState, args map[string]any) (any, error) {
+func (h *Handler) cmdDeckOpenPack(state *model.BoardState, taskRepo task.Repo, playerRepo *player.FileRepo, args map[string]any) (any, error) {
 	packStackID, err := getString(args, "packStackId")
 	if err != nil {
 		return nil, err
@@ -155,6 +159,17 @@ func (h *Handler) cmdDeckOpenPack(state *model.BoardState, args map[string]any) 
 	if !strings.HasSuffix(string(top.DefID), "_pack") {
 		return nil, fmt.Errorf("stack is not a pack: %s", packStackID)
 	}
+	if top.Data != nil {
+		if fromPack, ok := top.Data["deckId"].(string); ok && strings.TrimSpace(fromPack) != "" {
+			fromPack = strings.TrimSpace(fromPack)
+			if strings.TrimSpace(deckID) == "" {
+				deckID = fromPack
+			}
+			if strings.TrimSpace(deckID) != fromPack {
+				return nil, fmt.Errorf("pack belongs to %s, not %s", fromPack, deckID)
+			}
+		}
+	}
 
 	deckCfg := h.findDeckConfig(deckID)
 	if deckCfg == nil {
@@ -166,6 +181,9 @@ func (h *Handler) cmdDeckOpenPack(state *model.BoardState, args map[string]any) 
 	if len(deckCfg.Draws.RNGPool) == 0 {
 		return nil, fmt.Errorf("deck has empty rng_pool: %s", deckID)
 	}
+	if unlocked, reason := h.isDeckUnlocked(deckCfg, taskRepo, playerRepo); !unlocked {
+		return nil, fmt.Errorf("deck is locked: %s", reason)
+	}
 
 	radius := getIntOr(args, "radius", 170)
 	if radius <= 0 {
@@ -174,6 +192,36 @@ func (h *Handler) cmdDeckOpenPack(state *model.BoardState, args map[string]any) 
 	seedArg, err := getIntPtr(args, "seed")
 	if err != nil {
 		return nil, err
+	}
+
+	zombieCount := countZombieStacks(state)
+	overrunLevel := 0
+	if playerRepo != nil {
+		overrunLevel = playerRepo.GetMetric(player.MetricOverrunLevel)
+	}
+	openCost := h.deckOpenCost(deckCfg, zombieCount, overrunLevel)
+	coinsCharged := 0
+	freeOpenUsed := false
+	deckOpenCount := 0
+	inventory := map[string]int{}
+
+	if playerRepo != nil {
+		deckOpenCount = playerRepo.GetDeckOpenCount(deckCfg.ID)
+		freeOpenUsed = deckOpenCount < deckCfg.FreeOpens
+		coinsCharged = openCost
+		if freeOpenUsed {
+			coinsCharged = 0
+		}
+		if coinsCharged > 0 {
+			ok, wallet, err := playerRepo.SpendLoot(player.LootCoin, coinsCharged)
+			if err != nil {
+				return nil, fmt.Errorf("failed to spend coin for deck open: %w", err)
+			}
+			if !ok {
+				return nil, fmt.Errorf("not enough coin for deck open (need %d)", coinsCharged)
+			}
+			inventory = wallet.Loot
+		}
 	}
 	rng := h.newDeckRand(state, deckID, packStackID, seedArg)
 
@@ -206,9 +254,28 @@ func (h *Handler) cmdDeckOpenPack(state *model.BoardState, args map[string]any) 
 	}
 	state.RemoveStack(model.StackID(packStackID))
 
+	if playerRepo != nil {
+		nextOpenCount, wallet, err := playerRepo.IncrementDeckOpen(deckCfg.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update deck open count: %w", err)
+		}
+		deckOpenCount = nextOpenCount
+		if len(inventory) == 0 {
+			inventory = wallet.Loot
+		}
+	}
+
 	return map[string]any{
 		"removedStack":  packStackID,
 		"createdStacks": created,
+		"deck": map[string]any{
+			"id":            deckCfg.ID,
+			"costCharged":   coinsCharged,
+			"baseCost":      deckCfg.BaseCost,
+			"freeOpenUsed":  freeOpenUsed,
+			"deckOpenCount": deckOpenCount,
+		},
+		"inventory": inventory,
 	}, nil
 }
 
@@ -227,6 +294,99 @@ func (h *Handler) findDeckConfig(deckID string) *config.Deck {
 		}
 	}
 	return nil
+}
+
+func (h *Handler) isDeckUnlocked(deckCfg *config.Deck, taskRepo task.Repo, playerRepo *player.FileRepo) (bool, string) {
+	if deckCfg == nil {
+		return false, "deck config missing"
+	}
+	status := strings.ToLower(strings.TrimSpace(deckCfg.Status))
+	if status == "" || status == "unlocked" {
+		return true, ""
+	}
+	if len(deckCfg.UnlockCondition) == 0 {
+		return false, "unlock condition not met"
+	}
+
+	condType, _ := deckCfg.UnlockCondition["type"].(string)
+	condType = strings.TrimSpace(strings.ToLower(condType))
+	switch condType {
+	case "", "always":
+		return true, ""
+	case "processed_tasks_gte":
+		need := intFromAny(deckCfg.UnlockCondition["value"])
+		if need <= 0 {
+			return true, ""
+		}
+		processed := 0
+		if taskRepo != nil {
+			tasks, err := taskRepo.List(task.ListFilter{Status: "all"})
+			if err == nil {
+				for _, t := range tasks {
+					processed += t.ProcessedCount
+				}
+			}
+		}
+		if processed >= need {
+			return true, ""
+		}
+		return false, fmt.Sprintf("processed tasks %d/%d", processed, need)
+	case "zombies_seen_gte":
+		need := intFromAny(deckCfg.UnlockCondition["value"])
+		if need <= 0 {
+			return true, ""
+		}
+		seen := 0
+		if playerRepo != nil {
+			seen = playerRepo.GetMetric(player.MetricZombiesSeen)
+		}
+		if seen >= need {
+			return true, ""
+		}
+		return false, fmt.Sprintf("zombies seen %d/%d", seen, need)
+	default:
+		return false, fmt.Sprintf("unsupported unlock condition: %s", condType)
+	}
+}
+
+func (h *Handler) deckOpenCost(deckCfg *config.Deck, zombieCount, overrunLevel int) int {
+	if deckCfg == nil || deckCfg.BaseCost <= 0 {
+		return 0
+	}
+	zMult := 0.0
+	oMult := 0.0
+	if h.cfg != nil {
+		zMult = h.cfg.Decks.Economy.ZombieCostMultiplierPerZombie
+		oMult = h.cfg.Decks.Economy.OverrunCostMultiplierPerLevel
+	}
+	factor := 1.0 + (float64(zombieCount) * zMult) + (float64(overrunLevel) * oMult)
+	if factor < 0 {
+		factor = 0
+	}
+	return int(math.Ceil(float64(deckCfg.BaseCost) * factor))
+}
+
+func intFromAny(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	case string:
+		n = strings.TrimSpace(n)
+		if n == "" {
+			return 0
+		}
+		var out int
+		_, _ = fmt.Sscanf(n, "%d", &out)
+		return out
+	default:
+		return 0
+	}
 }
 
 func (h *Handler) newDeckRand(state *model.BoardState, deckID, packStackID string, seedArg *int) *rand.Rand {

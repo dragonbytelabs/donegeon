@@ -83,10 +83,24 @@ func (h *Handler) cmdWorldEndDay(state *model.BoardState, taskRepo task.Repo, pl
 	staminaResetVillagers := 0
 	if h.cfg != nil && h.cfg.World.DayTick.StaminaReset.Enabled && playerRepo != nil {
 		villagerIDs := boardVillagerStackIDs(state)
-		if _, err := playerRepo.ResetVillagerStamina(villagerIDs, h.villagerBaseMaxStamina(), h.cfg.World.DayTick.StaminaReset.Mode); err != nil {
+		maxStaminaByVillager := make(map[string]int, len(villagerIDs))
+		for _, villagerID := range villagerIDs {
+			maxStaminaByVillager[villagerID] = h.villagerMaxStamina(playerRepo, villagerID)
+		}
+		if _, err := playerRepo.ResetVillagerStaminaWithCaps(maxStaminaByVillager, h.cfg.World.DayTick.StaminaReset.Mode); err != nil {
 			return nil, fmt.Errorf("failed to reset villager stamina: %w", err)
 		}
 		staminaResetVillagers = len(villagerIDs)
+	}
+	if playerRepo != nil {
+		if len(spawnedZombieStacks) > 0 {
+			if _, _, err := playerRepo.IncrementMetric(player.MetricZombiesSeen, len(spawnedZombieStacks)); err != nil {
+				return nil, fmt.Errorf("failed to update zombies seen metric: %w", err)
+			}
+		}
+		if _, err := playerRepo.SetMetric(player.MetricOverrunLevel, countZombieStacks(state)); err != nil {
+			return nil, fmt.Errorf("failed to update overrun metric: %w", err)
+		}
 	}
 
 	sort.Strings(recurrenceRespawnedTaskIDs)
@@ -142,8 +156,9 @@ func (h *Handler) cmdZombieClear(state *model.BoardState, playerRepo *player.Fil
 		return nil, fmt.Errorf("stack is not a villager stack: %s", villagerStackID)
 	}
 
-	staminaCost := h.zombieClearStaminaCost()
-	ok, staminaRemaining, _, err := playerRepo.SpendVillagerStamina(villagerStackID, staminaCost, h.villagerBaseMaxStamina())
+	maxStamina := h.villagerMaxStamina(playerRepo, villagerStackID)
+	staminaCost := h.zombieClearStaminaCostForVillager(playerRepo, villagerStackID)
+	ok, staminaRemaining, _, err := playerRepo.SpendVillagerStamina(villagerStackID, staminaCost, maxStamina)
 	if err != nil {
 		return nil, fmt.Errorf("failed to spend villager stamina: %w", err)
 	}
@@ -190,6 +205,23 @@ func (h *Handler) cmdZombieClear(state *model.BoardState, playerRepo *player.Fil
 		inventory = playerRepo.GetState().Loot
 	}
 
+	xpGained := h.zombieClearXP()
+	awardedPerks := []string{}
+	progress := player.VillagerProgress{Level: 1}
+	if xpGained > 0 {
+		vp, newPerks, _, err := h.awardVillagerXP(playerRepo, villagerStackID, xpGained)
+		if err != nil {
+			return nil, fmt.Errorf("failed to award zombie clear XP: %w", err)
+		}
+		progress = vp
+		awardedPerks = newPerks
+	} else {
+		progress = playerRepo.GetVillagerProgress(villagerStackID)
+	}
+	if _, _, err := playerRepo.IncrementMetric(player.MetricZombiesCleared, 1); err != nil {
+		return nil, fmt.Errorf("failed to update zombies cleared metric: %w", err)
+	}
+
 	return map[string]any{
 		"removedZombieStack": zombieStackID,
 		"removedZombieCards": removedZombieCards,
@@ -201,6 +233,13 @@ func (h *Handler) cmdZombieClear(state *model.BoardState, playerRepo *player.Fil
 			"amount": rewardAmount,
 		},
 		"inventory": inventory,
+		"villagerProgress": map[string]any{
+			"xp":       progress.XP,
+			"level":    progress.Level,
+			"perks":    progress.Perks,
+			"xpGained": xpGained,
+			"newPerks": awardedPerks,
+		},
 	}, nil
 }
 
@@ -248,6 +287,112 @@ func (h *Handler) zombieClearStaminaCost() int {
 		return 1
 	}
 	return cost
+}
+
+func (h *Handler) zombieClearStaminaCostForVillager(playerRepo *player.FileRepo, villagerID string) int {
+	cost := h.zombieClearStaminaCost()
+	minCost := 1
+	if h.cfg != nil && h.cfg.Villagers.Actions.ClearZombie.MinCostAfterPerks > 0 {
+		minCost = h.cfg.Villagers.Actions.ClearZombie.MinCostAfterPerks
+	}
+	progress := playerRepo.GetVillagerProgress(villagerID)
+	for _, perkID := range progress.Perks {
+		perk := h.findPerkByID(perkID)
+		if perk == nil {
+			continue
+		}
+		applyMap, ok := perk.Apply.(map[string]any)
+		if !ok {
+			continue
+		}
+		cost += intFromAny(applyMap["zombie_clear_stamina_cost_add"])
+		if perkMin := intFromAny(applyMap["min_zombie_clear_cost"]); perkMin > 0 && perkMin > minCost {
+			minCost = perkMin
+		}
+	}
+	if cost < minCost {
+		cost = minCost
+	}
+	if cost <= 0 {
+		cost = 1
+	}
+	return cost
+}
+
+func (h *Handler) villagerMaxStamina(playerRepo *player.FileRepo, villagerID string) int {
+	maxStamina := h.villagerBaseMaxStamina()
+	progress := playerRepo.GetVillagerProgress(villagerID)
+	for _, perkID := range progress.Perks {
+		perk := h.findPerkByID(perkID)
+		if perk == nil {
+			continue
+		}
+		applyMap, ok := perk.Apply.(map[string]any)
+		if !ok {
+			continue
+		}
+		maxStamina += intFromAny(applyMap["max_stamina_add"])
+	}
+	if maxStamina <= 0 {
+		maxStamina = 1
+	}
+	return maxStamina
+}
+
+func (h *Handler) findPerkByID(perkID string) *config.Perk {
+	if h.cfg == nil {
+		return nil
+	}
+	for i := range h.cfg.Villagers.Leveling.PerkPool {
+		if h.cfg.Villagers.Leveling.PerkPool[i].ID == perkID {
+			return &h.cfg.Villagers.Leveling.PerkPool[i]
+		}
+	}
+	return nil
+}
+
+func (h *Handler) perkPoolIDs() []string {
+	if h.cfg == nil {
+		return nil
+	}
+	out := make([]string, 0, len(h.cfg.Villagers.Leveling.PerkPool))
+	for _, p := range h.cfg.Villagers.Leveling.PerkPool {
+		if strings.TrimSpace(p.ID) == "" {
+			continue
+		}
+		out = append(out, p.ID)
+	}
+	return out
+}
+
+func (h *Handler) awardVillagerXP(playerRepo *player.FileRepo, villagerID string, xp int) (player.VillagerProgress, []string, player.UserState, error) {
+	if playerRepo == nil {
+		return player.VillagerProgress{Level: 1}, nil, player.UserState{}, nil
+	}
+	thresholds := map[int]int{}
+	maxLevel := 10
+	choicesPerLevel := 1
+	if h.cfg != nil {
+		thresholds = h.cfg.Villagers.Leveling.Thresholds
+		if h.cfg.Villagers.Defaults.MaxLevel > 0 {
+			maxLevel = h.cfg.Villagers.Defaults.MaxLevel
+		}
+		if h.cfg.Villagers.Leveling.ChoicesPerLevel > 0 {
+			choicesPerLevel = h.cfg.Villagers.Leveling.ChoicesPerLevel
+		}
+	}
+	return playerRepo.AddVillagerXP(villagerID, xp, thresholds, maxLevel, h.perkPoolIDs(), choicesPerLevel)
+}
+
+func (h *Handler) zombieClearXP() int {
+	if h.cfg == nil {
+		return 0
+	}
+	xp := h.cfg.Villagers.Leveling.XPSources.ClearZombie.BaseXP
+	if xp < 0 {
+		return 0
+	}
+	return xp
 }
 
 func (h *Handler) zombieClearReward() (string, int) {

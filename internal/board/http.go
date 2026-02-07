@@ -260,7 +260,7 @@ func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, pl
 	case "deck.spawn_pack":
 		return h.cmdDeckSpawnPack(state, args)
 	case "deck.open_pack":
-		return h.cmdDeckOpenPack(state, args)
+		return h.cmdDeckOpenPack(state, taskRepo, playerRepo, args)
 	case "stack.move":
 		return h.cmdStackMove(state, args)
 	case "stack.bringToFront":
@@ -288,7 +288,7 @@ func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, pl
 	case "task.assign_villager":
 		return h.cmdTaskAssignVillager(state, taskRepo, args)
 	case "task.complete_stack":
-		return h.cmdTaskCompleteStack(state, taskRepo, args)
+		return h.cmdTaskCompleteStack(state, taskRepo, playerRepo, args)
 	case "world.end_day":
 		return h.cmdWorldEndDay(state, taskRepo, playerRepo, args)
 	case "zombie.clear":

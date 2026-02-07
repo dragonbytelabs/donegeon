@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"donegeon/internal/model"
+	"donegeon/internal/player"
 	"donegeon/internal/task"
 )
 
@@ -45,7 +46,7 @@ func (h *Handler) cmdTaskSetTaskID(state *model.BoardState, taskRepo task.Repo, 
 }
 
 // task.complete_stack { stackId }
-func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Repo, args map[string]any) (any, error) {
+func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Repo, playerRepo *player.FileRepo, args map[string]any) (any, error) {
 	stackID, err := getString(args, "stackId")
 	if err != nil {
 		return nil, err
@@ -60,6 +61,7 @@ func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Re
 	}
 
 	taskID := ""
+	villagerID := ""
 	hasVillager := false
 	taskCards := 0
 	for _, cid := range stack.Cards {
@@ -73,6 +75,9 @@ func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Re
 			if taskID == "" && c.Data != nil {
 				if v, ok := c.Data["taskId"].(string); ok {
 					taskID = strings.TrimSpace(v)
+				}
+				if v, ok := c.Data["assignedVillagerId"].(string); ok {
+					villagerID = strings.TrimSpace(v)
 				}
 			}
 		}
@@ -135,11 +140,53 @@ func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Re
 		_ = taskRepo.SetLive(model.TaskID(taskID), false)
 	}
 
+	xpGained := 0
+	villagerProgress := player.VillagerProgress{Level: 1}
+	awardedPerks := []string{}
+	if playerRepo != nil && hasVillager && villagerID != "" {
+		xpGained = h.taskCompleteXP()
+		if xpGained > 0 {
+			vp, newPerks, _, err := h.awardVillagerXP(playerRepo, villagerID, xpGained)
+			if err != nil {
+				return nil, fmt.Errorf("failed to award task completion XP: %w", err)
+			}
+			villagerProgress = vp
+			awardedPerks = newPerks
+		} else {
+			villagerProgress = playerRepo.GetVillagerProgress(villagerID)
+		}
+	}
+	if playerRepo != nil {
+		_, _, _ = playerRepo.IncrementMetric(player.MetricTasksCompleted, 1)
+	}
+
 	return map[string]any{
 		"removedStack":      stackID,
 		"removedCards":      removedCards,
 		"createdStacks":     createdStacks,
 		"completedTaskId":   taskID,
 		"completionByStack": hasVillager,
+		"villagerProgress": map[string]any{
+			"id":       villagerID,
+			"xp":       villagerProgress.XP,
+			"level":    villagerProgress.Level,
+			"perks":    villagerProgress.Perks,
+			"xpGained": xpGained,
+			"newPerks": awardedPerks,
+		},
 	}, nil
+}
+
+func (h *Handler) taskCompleteXP() int {
+	if h.cfg == nil {
+		return 0
+	}
+	xp := h.cfg.Villagers.Leveling.XPSources.CompleteTask.BaseXP
+	if bonus, ok := h.cfg.Villagers.Leveling.XPSources.CompleteTask.ByPriority["none"]; ok {
+		xp += bonus
+	}
+	if xp < 0 {
+		xp = 0
+	}
+	return xp
 }

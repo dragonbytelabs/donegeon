@@ -94,6 +94,51 @@ func parseBoolPtr(s string) *bool {
 	return nil
 }
 
+func normalizeModifierDefID(defID string) string {
+	s := strings.ToLower(strings.TrimSpace(defID))
+	if s == "" {
+		return ""
+	}
+	if strings.HasPrefix(s, "mod.") {
+		return s
+	}
+	return "mod." + s
+}
+
+func hasAnyModifier(mods []model.TaskModifierSlot, defIDs ...string) bool {
+	if len(mods) == 0 || len(defIDs) == 0 {
+		return false
+	}
+	want := make(map[string]struct{}, len(defIDs))
+	for _, id := range defIDs {
+		n := normalizeModifierDefID(id)
+		if n != "" {
+			want[n] = struct{}{}
+		}
+	}
+	if len(want) == 0 {
+		return false
+	}
+	for _, m := range mods {
+		if _, ok := want[normalizeModifierDefID(m.DefID)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func allowsDueDateViaModifier(mods []model.TaskModifierSlot) bool {
+	return hasAnyModifier(mods, "mod.deadline_pin")
+}
+
+func allowsNextActionViaModifier(mods []model.TaskModifierSlot) bool {
+	return hasAnyModifier(mods, "mod.next_action")
+}
+
+func allowsRecurrenceViaModifier(mods []model.TaskModifierSlot) bool {
+	return hasAnyModifier(mods, "mod.recurring", "mod.recurring_contract")
+}
+
 func isUnlocked(repo *player.FileRepo, feature string) bool {
 	if repo == nil {
 		return true
@@ -132,6 +177,45 @@ func (h *Handler) villagerBaseMaxStamina() int {
 	return h.cfg.Villagers.Defaults.BaseMaxStamina
 }
 
+func intFromAny(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func (h *Handler) villagerMaxStaminaFor(repo *player.FileRepo, villagerID string) int {
+	max := h.villagerBaseMaxStamina()
+	if repo == nil || strings.TrimSpace(villagerID) == "" || h.cfg == nil {
+		return max
+	}
+	progress := repo.GetVillagerProgress(villagerID)
+	for _, perkID := range progress.Perks {
+		for _, perk := range h.cfg.Villagers.Leveling.PerkPool {
+			if perk.ID != perkID {
+				continue
+			}
+			applyMap, ok := perk.Apply.(map[string]any)
+			if !ok {
+				continue
+			}
+			max += intFromAny(applyMap["max_stamina_add"])
+		}
+	}
+	if max <= 0 {
+		return 1
+	}
+	return max
+}
+
 // /api/tasks  (collection)
 func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 	repo := h.repoForRequest(r)
@@ -159,15 +243,22 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "bad json")
 			return
 		}
-		if in.DueDate != nil && strings.TrimSpace(*in.DueDate) != "" && !isUnlocked(playerRepo, player.FeatureTaskDueDate) {
+		if in.DueDate != nil &&
+			strings.TrimSpace(*in.DueDate) != "" &&
+			!isUnlocked(playerRepo, player.FeatureTaskDueDate) &&
+			!allowsDueDateViaModifier(in.Modifiers) {
 			denyLockedFeature(w, player.FeatureTaskDueDate)
 			return
 		}
-		if in.NextAction && !isUnlocked(playerRepo, player.FeatureTaskNextAction) {
+		if in.NextAction &&
+			!isUnlocked(playerRepo, player.FeatureTaskNextAction) &&
+			!allowsNextActionViaModifier(in.Modifiers) {
 			denyLockedFeature(w, player.FeatureTaskNextAction)
 			return
 		}
-		if in.Recurrence != nil && !isUnlocked(playerRepo, player.FeatureTaskRecurrence) {
+		if in.Recurrence != nil &&
+			!isUnlocked(playerRepo, player.FeatureTaskRecurrence) &&
+			!allowsRecurrenceViaModifier(in.Modifiers) {
 			denyLockedFeature(w, player.FeatureTaskRecurrence)
 			return
 		}
@@ -239,20 +330,20 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, 400, "bad json")
 				return
 			}
-			if p.DueDate != nil && strings.TrimSpace(*p.DueDate) != "" && !isUnlocked(playerRepo, player.FeatureTaskDueDate) {
-				denyLockedFeature(w, player.FeatureTaskDueDate)
-				return
-			}
-			if p.NextAction != nil && *p.NextAction && !isUnlocked(playerRepo, player.FeatureTaskNextAction) {
-				denyLockedFeature(w, player.FeatureTaskNextAction)
-				return
-			}
-			if p.Recurrence != nil && !isUnlocked(playerRepo, player.FeatureTaskRecurrence) {
-				denyLockedFeature(w, player.FeatureTaskRecurrence)
-				return
+			var (
+				cur       model.Task
+				needCur   bool
+				curLoaded bool
+			)
+			if p.Modifiers == nil && (p.DueDate != nil || p.NextAction != nil || p.Recurrence != nil) {
+				needCur = true
 			}
 			if p.Done != nil && *p.Done && h.completionRequiresAssignedVillager() {
-				cur, err := repo.Get(model.TaskID(id))
+				needCur = true
+			}
+			if needCur {
+				var err error
+				cur, err = repo.Get(model.TaskID(id))
 				if err == ErrNotFound {
 					writeErr(w, 404, "not found")
 					return
@@ -260,6 +351,49 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					writeErr(w, 500, err.Error())
 					return
+				}
+				curLoaded = true
+			}
+
+			effectiveMods := []model.TaskModifierSlot{}
+			if p.Modifiers != nil {
+				effectiveMods = *p.Modifiers
+			} else if curLoaded {
+				effectiveMods = cur.Modifiers
+			}
+
+			if p.DueDate != nil &&
+				strings.TrimSpace(*p.DueDate) != "" &&
+				!isUnlocked(playerRepo, player.FeatureTaskDueDate) &&
+				!allowsDueDateViaModifier(effectiveMods) {
+				denyLockedFeature(w, player.FeatureTaskDueDate)
+				return
+			}
+			if p.NextAction != nil &&
+				*p.NextAction &&
+				!isUnlocked(playerRepo, player.FeatureTaskNextAction) &&
+				!allowsNextActionViaModifier(effectiveMods) {
+				denyLockedFeature(w, player.FeatureTaskNextAction)
+				return
+			}
+			if p.Recurrence != nil &&
+				!isUnlocked(playerRepo, player.FeatureTaskRecurrence) &&
+				!allowsRecurrenceViaModifier(effectiveMods) {
+				denyLockedFeature(w, player.FeatureTaskRecurrence)
+				return
+			}
+			if p.Done != nil && *p.Done && h.completionRequiresAssignedVillager() {
+				if !curLoaded {
+					var err error
+					cur, err = repo.Get(model.TaskID(id))
+					if err == ErrNotFound {
+						writeErr(w, 404, "not found")
+						return
+					}
+					if err != nil {
+						writeErr(w, 500, err.Error())
+						return
+					}
 				}
 				if cur.AssignedVillagerID == nil || strings.TrimSpace(*cur.AssignedVillagerID) == "" {
 					writeErr(w, 400, "task completion requires an assigned villager")
@@ -363,7 +497,8 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 			if cur.AssignedVillagerID != nil && strings.TrimSpace(*cur.AssignedVillagerID) != "" {
 				if pRepo := h.playerForRequest(r); pRepo != nil {
 					cost := h.taskWorkStaminaCost()
-					ok, remaining, _, err := pRepo.SpendVillagerStamina(*cur.AssignedVillagerID, cost, h.villagerBaseMaxStamina())
+					maxStamina := h.villagerMaxStaminaFor(pRepo, *cur.AssignedVillagerID)
+					ok, remaining, _, err := pRepo.SpendVillagerStamina(*cur.AssignedVillagerID, cost, maxStamina)
 					if err != nil {
 						writeErr(w, 500, "could not consume villager stamina")
 						return
