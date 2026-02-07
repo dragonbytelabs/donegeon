@@ -7,13 +7,14 @@ import { scheduleSave } from "./storage";
 import {
   cmdDeckOpenPack,
   cmdDeckSpawnPack,
+  cmdLootCollectStack,
   cmdStackMerge,
   cmdStackMove,
-  cmdStackRemove,
   cmdStackSplit,
+  cmdTaskAssignVillager,
   reloadBoard,
 } from "./api";
-import { addLoot, isCollectableLoot } from "./inventory";
+import { isCollectableLoot, refreshInventory } from "./inventory";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
 const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click
@@ -72,6 +73,76 @@ function bestMergeTarget(engine: Engine, draggedId: string): string | null {
   }
 
   return bestScore >= MERGE_THRESHOLD_AREA ? best : null;
+}
+
+function bestCollectDeckTarget(engine: Engine, draggedId: string): string | null {
+  const draggedNode = stackNodeById(draggedId);
+  if (!draggedNode) return null;
+
+  const dr = rect(draggedNode);
+  let best: string | null = null;
+  let bestScore = 0;
+
+  for (const id of engine.stacks.keys()) {
+    if (id === draggedId) continue;
+    const stack = engine.getStack(id);
+    if (!stackHasDef(stack, "deck.collect")) continue;
+
+    const node = stackNodeById(id);
+    if (!node) continue;
+
+    const score = intersectArea(dr, rect(node));
+    if (score > bestScore) {
+      bestScore = score;
+      best = id;
+    }
+  }
+
+  return bestScore >= MERGE_THRESHOLD_AREA ? best : null;
+}
+
+function pointerDropTargetStackId(clientX: number, clientY: number, excludeStackId: string): string | null {
+  const draggedNode = stackNodeById(excludeStackId);
+  if (draggedNode) draggedNode.style.pointerEvents = "none";
+
+  const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+
+  if (draggedNode) draggedNode.style.pointerEvents = "";
+  if (!el) return null;
+
+  const stackEl = el.closest(".sl-stack") as HTMLElement | null;
+  if (!stackEl) return null;
+
+  const stackId = stackEl.dataset.stackId;
+  if (!stackId || stackId === excludeStackId) return null;
+
+  return stackId;
+}
+
+function stackHasKind(stack: any, kind: string): boolean {
+  if (!stack) return false;
+  const cards = stack.cards?.[0]?.() ?? [];
+  for (const c of cards as any[]) {
+    if (c?.def?.kind === kind) return true;
+  }
+  return false;
+}
+
+function stackHasDef(stack: any, defId: string): boolean {
+  if (!stack) return false;
+  const cards = stack.cards?.[0]?.() ?? [];
+  for (const c of cards as any[]) {
+    if (c?.def?.id === defId) return true;
+  }
+  return false;
+}
+
+function canCollectStackCard(defId: string): boolean {
+  if (isCollectableLoot(defId)) return true;
+  if (defId === "task.blank") return true;
+  if (defId.startsWith("mod.")) return true;
+  if (defId.startsWith("resource.")) return true;
+  return false;
 }
 
 /**
@@ -340,25 +411,18 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
 
     // merge only if it was a real drag
     if (didMove) {
-      const target = bestMergeTarget(engine, ended.stackId);
-      if (target) {
-        // Check if dropping on collect deck
-        const targetStack = engine.getStack(target);
+      const collectTarget = bestCollectDeckTarget(engine, ended.stackId);
+      if (collectTarget) {
         const sourceStack = engine.getStack(ended.stackId);
-        const targetTopCard = targetStack?.topCard();
         const sourceTopCard = sourceStack?.topCard();
-
-        if (targetTopCard?.def.id === "deck.collect" && sourceTopCard) {
-          // Check if source is collectable loot
-          const lootType = isCollectableLoot(sourceTopCard.def.id);
-          if (lootType) {
-            // Collect the loot into inventory
-            addLoot(lootType, 1);
-            // Remove the source stack (it's been collected)
-            engine.removeStack(ended.stackId);
+        if (sourceTopCard && sourceStack) {
+          const sourceCards = sourceStack.cards?.[0]?.() ?? [];
+          const isSingleCardStack = sourceCards.length === 1;
+          if (isSingleCardStack && canCollectStackCard(sourceTopCard.def.id)) {
             scheduleSave(engine);
-            void cmdStackRemove(ended.stackId)
+            void cmdLootCollectStack(ended.stackId)
               .then(() => reloadBoard(engine))
+              .then(() => refreshInventory())
               .then(() => scheduleLiveSync(engine))
               .catch((err) => {
                 console.warn("collect sync failed", err);
@@ -367,8 +431,59 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
             return;
           }
         }
+        // Do not attempt a normal merge onto collect deck for non-collectables.
+        void reloadBoard(engine).catch(() => {});
+        return;
+      }
+
+      const dropTarget = pointerDropTargetStackId(e.clientX, e.clientY, ended.stackId);
+      const target = dropTarget || bestMergeTarget(engine, ended.stackId);
+      if (target) {
+        // Safety check in case collect deck wasn't the best overlap target.
+        const targetStack = engine.getStack(target);
+        const sourceStack = engine.getStack(ended.stackId);
+        const sourceTopCard = sourceStack?.topCard();
+
+        if (stackHasDef(targetStack, "deck.collect") && sourceTopCard && sourceStack) {
+          const sourceCards = sourceStack.cards?.[0]?.() ?? [];
+          const isSingleCardStack = sourceCards.length === 1;
+          if (isSingleCardStack && canCollectStackCard(sourceTopCard.def.id)) {
+            scheduleSave(engine);
+            void cmdLootCollectStack(ended.stackId)
+              .then(() => reloadBoard(engine))
+              .then(() => refreshInventory())
+              .then(() => scheduleLiveSync(engine))
+              .catch((err) => {
+                console.warn("collect sync failed", err);
+                void reloadBoard(engine).catch(() => {});
+              });
+            return;
+          }
+          // Do not attempt a normal merge onto collect deck for non-collectables.
+          void reloadBoard(engine).catch(() => {});
+          return;
+        }
 
         // Normal merge behavior goes through server; then rehydrate.
+        const targetHasTask = stackHasKind(targetStack, "task");
+        const sourceHasTask = stackHasKind(sourceStack, "task");
+        const targetHasVillager = stackHasKind(targetStack, "villager");
+        const sourceHasVillager = stackHasKind(sourceStack, "villager");
+
+        if ((targetHasTask && sourceHasVillager) || (sourceHasTask && targetHasVillager)) {
+          const taskStackId = targetHasTask ? target : ended.stackId;
+          const villagerStackId = targetHasVillager ? target : ended.stackId;
+          void cmdTaskAssignVillager(taskStackId, villagerStackId, target)
+            .then(() => reloadBoard(engine))
+            .then(() => scheduleLiveSync(engine))
+            .then(() => refreshInventory())
+            .catch((err) => {
+              console.warn("assign villager sync failed", err);
+              void reloadBoard(engine).catch(() => {});
+            });
+          return;
+        }
+
         void cmdStackMerge(target, ended.stackId)
           .then(() => reloadBoard(engine))
           .then(() => scheduleLiveSync(engine))

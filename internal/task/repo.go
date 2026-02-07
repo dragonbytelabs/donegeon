@@ -31,6 +31,11 @@ type Patch struct {
 	DueDate    *string                   `json:"dueDate,omitempty"`
 	NextAction *bool                     `json:"nextAction,omitempty"`
 	Recurrence *model.Recurrence         `json:"recurrence,omitempty"`
+
+	// Internal fields (not exposed via JSON API directly).
+	AssignedVillagerID  *string `json:"-"`
+	WorkedToday         *bool   `json:"-"`
+	ProcessedCountDelta *int    `json:"-"`
 }
 
 type ListFilter struct {
@@ -180,6 +185,24 @@ func applyPatch(t *model.Task, p Patch) error {
 	if p.Recurrence != nil {
 		// NOTE: if you need "clear recurrence" via JSON null, you’ll want a pointer-to-pointer.
 		t.Recurrence = p.Recurrence
+	}
+	if p.AssignedVillagerID != nil {
+		if strings.TrimSpace(*p.AssignedVillagerID) == "" {
+			t.AssignedVillagerID = nil
+		} else {
+			v := strings.TrimSpace(*p.AssignedVillagerID)
+			t.AssignedVillagerID = &v
+		}
+	}
+	if p.WorkedToday != nil {
+		t.WorkedToday = *p.WorkedToday
+	}
+	if p.ProcessedCountDelta != nil && *p.ProcessedCountDelta != 0 {
+		next := t.ProcessedCount + *p.ProcessedCountDelta
+		if next < 0 {
+			next = 0
+		}
+		t.ProcessedCount = next
 	}
 
 	return nil

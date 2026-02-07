@@ -114,7 +114,7 @@ func TestDeckCommands_OpenPackLifecycle(t *testing.T) {
 	h, _ := newTestBoardHandler()
 	state := model.NewBoardState()
 
-	if _, err := h.executeCommand(state, nil, "board.seed_default", map[string]any{"deckRowY": float64(500)}); err != nil {
+	if _, err := h.executeCommand(state, nil, nil, "board.seed_default", map[string]any{"deckRowY": float64(500)}); err != nil {
 		t.Fatalf("seed default: %v", err)
 	}
 
@@ -123,7 +123,7 @@ func TestDeckCommands_OpenPackLifecycle(t *testing.T) {
 		t.Fatalf("expected deck.first_day stack")
 	}
 
-	if _, err := h.executeCommand(state, nil, "deck.spawn_pack", map[string]any{
+	if _, err := h.executeCommand(state, nil, nil, "deck.spawn_pack", map[string]any{
 		"deckStackId": firstDayStack,
 		"x":           float64(300),
 		"y":           float64(300),
@@ -139,7 +139,7 @@ func TestDeckCommands_OpenPackLifecycle(t *testing.T) {
 
 	stacksBefore := len(state.Stacks)
 
-	if _, err := h.executeCommand(state, nil, "deck.open_pack", map[string]any{
+	if _, err := h.executeCommand(state, nil, nil, "deck.open_pack", map[string]any{
 		"packStackId": packStack,
 		"deckId":      "deck.first_day",
 		"radius":      float64(170),

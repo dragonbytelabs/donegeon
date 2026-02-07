@@ -11,78 +11,35 @@
         "card_1"
       ]
     },
-    "stack_10": {
-      "id": "stack_10",
-      "pos": {
-        "x": 1277,
-        "y": 221
-      },
-      "z": 20,
-      "cards": [
-        "card_10"
-      ]
-    },
     "stack_11": {
       "id": "stack_11",
       "pos": {
-        "x": 1145,
-        "y": 67
+        "x": 666,
+        "y": 420
       },
       "z": 21,
       "cards": [
         "card_11"
       ]
     },
-    "stack_12": {
-      "id": "stack_12",
+    "stack_16": {
+      "id": "stack_16",
       "pos": {
-        "x": 983,
-        "y": 358
+        "x": 111,
+        "y": 177
       },
-      "z": 22,
+      "z": 28,
       "cards": [
-        "card_12"
-      ]
-    },
-    "stack_13": {
-      "id": "stack_13",
-      "pos": {
-        "x": 867,
-        "y": 358
-      },
-      "z": 23,
-      "cards": [
-        "card_13"
-      ]
-    },
-    "stack_14": {
-      "id": "stack_14",
-      "pos": {
-        "x": 639,
-        "y": 111
-      },
-      "z": 24,
-      "cards": [
-        "card_14"
-      ]
-    },
-    "stack_18": {
-      "id": "stack_18",
-      "pos": {
-        "x": 441,
-        "y": 199
-      },
-      "z": 31,
-      "cards": [
-        "card_16",
-        "card_5"
+        "card_5",
+        "card_10",
+        "card_16"
       ]
     },
     "stack_2": {
       "id": "stack_2",
       "pos": {
-        "x": 595,
-        "y": 661
+        "x": 170,
+        "y": 659
       },
       "z": 12,
       "cards": [
@@ -92,8 +49,8 @@
     "stack_3": {
       "id": "stack_3",
       "pos": {
-        "x": 221,
-        "y": 661
+        "x": 280,
+        "y": 659
       },
       "z": 13,
       "cards": [
@@ -114,30 +71,19 @@
     "stack_6": {
       "id": "stack_6",
       "pos": {
-        "x": 177,
-        "y": 265
+        "x": 420,
+        "y": 200
       },
       "z": 16,
       "cards": [
         "card_6"
       ]
     },
-    "stack_8": {
-      "id": "stack_8",
-      "pos": {
-        "x": 925,
-        "y": 121
-      },
-      "z": 18,
-      "cards": [
-        "card_8"
-      ]
-    },
     "stack_9": {
       "id": "stack_9",
       "pos": {
-        "x": 1034,
-        "y": 150
+        "x": 628,
+        "y": 266
       },
       "z": 19,
       "cards": [
@@ -158,21 +104,14 @@
       "id": "card_11",
       "defId": "resource.berry_bush"
     },
-    "card_12": {
-      "id": "card_12",
-      "defId": "mod.next_action"
-    },
-    "card_13": {
-      "id": "card_13",
-      "defId": "task.blank"
-    },
-    "card_14": {
-      "id": "card_14",
-      "defId": "task.blank"
-    },
     "card_16": {
       "id": "card_16",
-      "defId": "task.blank"
+      "defId": "task.instance",
+      "data": {
+        "assignedVillagerId": "stack_5",
+        "description": "asdf",
+        "title": "asdf"
+      }
     },
     "card_2": {
       "id": "card_2",
@@ -200,16 +139,12 @@
         "name": "Pip"
       }
     },
-    "card_8": {
-      "id": "card_8",
-      "defId": "task.blank"
-    },
     "card_9": {
       "id": "card_9",
       "defId": "resource.berry_bush"
     }
   },
-  "nextZ": 31,
+  "nextZ": 28,
   "pan": {
     "x": 0,
     "y": 0

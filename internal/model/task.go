@@ -20,10 +20,13 @@ type Task struct {
 	Tags        []string `json:"tags,omitempty"`
 	Live        bool     `json:"live,omitempty"`
 
-	Modifiers  []TaskModifierSlot `json:"modifiers,omitempty"`
-	DueDate    *string            `json:"dueDate,omitempty"`
-	NextAction bool               `json:"nextAction"`
-	Recurrence *Recurrence        `json:"recurrence,omitempty"`
+	Modifiers          []TaskModifierSlot `json:"modifiers,omitempty"`
+	DueDate            *string            `json:"dueDate,omitempty"`
+	NextAction         bool               `json:"nextAction"`
+	Recurrence         *Recurrence        `json:"recurrence,omitempty"`
+	AssignedVillagerID *string            `json:"assignedVillagerId,omitempty"`
+	WorkedToday        bool               `json:"workedToday,omitempty"`
+	ProcessedCount     int                `json:"processedCount,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

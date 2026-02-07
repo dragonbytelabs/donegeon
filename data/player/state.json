@@ -1,0 +1,19 @@
+{
+  "users": {
+    "usr_838f48afd4fb1a61": {
+      "loot": {
+        "blueprint_shard": 0,
+        "coin": 4,
+        "gear": 0,
+        "ink": 0,
+        "paper": 0,
+        "parts": 1
+      },
+      "unlocks": {
+        "task.due_date": false,
+        "task.next_action": false,
+        "task.recurrence": false
+      }
+    }
+  }
+}

@@ -1,64 +1,68 @@
-// Loot inventory management
+export type LootType = "coin" | "paper" | "ink" | "gear" | "parts" | "blueprint_shard";
 
-export interface LootInventory {
-  coin: number;
-  wood: number;
-}
+export type LootInventory = Record<LootType, number>;
+
+const LOOT_TYPES: LootType[] = ["coin", "paper", "ink", "gear", "parts", "blueprint_shard"];
 
 let inventory: LootInventory = {
   coin: 0,
-  wood: 0,
+  paper: 0,
+  ink: 0,
+  gear: 0,
+  parts: 0,
+  blueprint_shard: 0,
 };
 
 export function getInventory(): LootInventory {
   return { ...inventory };
 }
 
-export function addLoot(type: keyof LootInventory, amount: number = 1): void {
-  inventory[type] += amount;
+type PlayerStateResponse = {
+  loot?: Partial<LootInventory>;
+};
+
+function applyLoot(loot?: Partial<LootInventory>) {
+  const next = { ...inventory };
+  for (const t of LOOT_TYPES) {
+    next[t] = Number(loot?.[t] ?? 0);
+  }
+  inventory = next;
   updateInventoryUI();
-  saveInventory();
 }
 
-export function removeLoot(type: keyof LootInventory, amount: number = 1): boolean {
-  if (inventory[type] < amount) return false;
-  inventory[type] -= amount;
-  updateInventoryUI();
-  saveInventory();
-  return true;
+async function fetchPlayerState(): Promise<PlayerStateResponse> {
+  const res = await fetch("/api/player/state");
+  if (!res.ok) {
+    throw new Error(`GET /api/player/state failed: ${res.status}`);
+  }
+  return res.json();
 }
 
 export function updateInventoryUI(): void {
-  const coinEl = document.getElementById("loot-coin");
-  const woodEl = document.getElementById("loot-wood");
-
-  if (coinEl) coinEl.textContent = String(inventory.coin);
-  if (woodEl) woodEl.textContent = String(inventory.wood);
-}
-
-function saveInventory(): void {
-  try {
-    localStorage.setItem("donegeon-inventory", JSON.stringify(inventory));
-  } catch (e) {
-    console.warn("Failed to save inventory", e);
+  for (const t of LOOT_TYPES) {
+    const el = document.getElementById(`loot-${t}`);
+    if (!el) continue;
+    el.textContent = String(inventory[t] ?? 0);
   }
 }
 
-export function loadInventory(): void {
+export async function refreshInventory(): Promise<void> {
   try {
-    const saved = localStorage.getItem("donegeon-inventory");
-    if (saved) {
-      inventory = { ...inventory, ...JSON.parse(saved) };
-    }
+    const s = await fetchPlayerState();
+    applyLoot(s.loot);
   } catch (e) {
-    console.warn("Failed to load inventory", e);
+    console.warn("Failed to refresh inventory", e);
   }
-  updateInventoryUI();
+}
+
+export async function loadInventory(): Promise<void> {
+  await refreshInventory();
 }
 
 // Check if a card is loot that can be collected
-export function isCollectableLoot(defId: string): keyof LootInventory | null {
-  if (defId === "loot.coin") return "coin";
-  if (defId === "loot.wood") return "wood";
+export function isCollectableLoot(defId: string): LootType | null {
+  if (!defId.startsWith("loot.")) return null;
+  const lootType = defId.slice("loot.".length) as LootType;
+  if (LOOT_TYPES.includes(lootType)) return lootType;
   return null;
 }

@@ -15,59 +15,35 @@ templ TodaysGoalsSidebarContent() {
 		<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Task Summary</div>
 		<div class="mb-2 flex items-center gap-2">
 			<span class="text-xs text-zinc-400">Danger:</span>
-			<span id="dangerLevel" class="rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">SAFE</span>
+			<span data-goal="danger-badge" class="rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">SAFE</span>
 		</div>
 		<div class="space-y-1 text-xs text-zinc-400">
-			<div>Villagers: <span id="villagerCount" class="text-zinc-200">0 live / 0 total</span></div>
-			<div>Tasks: <span id="taskCount" class="text-zinc-200">0 hrs + completed today</span></div>
+			<div>Villagers: <span data-goal="villager-count" class="text-zinc-200">0 live / 0 total</span></div>
+			<div>Tasks: <span data-goal="task-count" class="text-zinc-200">0 active + 0 completed today</span></div>
 		</div>
 	</div>
 
 	<!-- Villager Stamina -->
 	<div class="border-b border-border px-4 py-3">
 		<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Villager Stamina</div>
-		<div id="villagerStamina" class="space-y-1 text-xs text-zinc-400">
-			<div>Villager 1: <span class="text-zinc-200">5/10 stamina</span></div>
-			<div>Villager 2: <span class="text-zinc-200">10/10 stamina</span></div>
-			<div>Villager 3: <span class="text-zinc-200">8/10 stamina</span></div>
+		<div data-goal="villager-stamina-list" class="space-y-1 text-xs text-zinc-400">
+			<div class="text-zinc-500">No villagers deployed</div>
 		</div>
 	</div>
 
 	<!-- Active Tasks -->
 	<div class="border-b border-border px-4 py-3">
 		<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Active Tasks</div>
-		<div id="activeTasks" class="space-y-1 text-xs text-zinc-400">
-			<div class="flex items-center gap-2">
-				<span class="text-green-400">✓</span>
-				<span class="text-zinc-300">2 tasks completed</span>
-			</div>
+		<div data-goal="active-tasks-list" class="space-y-1 text-xs text-zinc-400">
+			<div class="text-zinc-500">No tasks completed today</div>
 		</div>
 	</div>
 
 	<!-- Success Checklist -->
 	<div class="px-4 py-3">
 		<div class="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Success Checklist</div>
-		<div id="successChecklist" class="space-y-2 text-xs">
-			<div class="flex items-center gap-2 text-zinc-400">
-				<span class="text-green-400">✓</span>
-				<span>Assign tasks to villagers</span>
-			</div>
-			<div class="flex items-center gap-2 text-zinc-400">
-				<span class="text-green-400">✓</span>
-				<span>Use stamina efficiently</span>
-			</div>
-			<div class="flex items-center gap-2 text-zinc-400">
-				<span class="text-green-400">✓</span>
-				<span>Complete high-value tasks</span>
-			</div>
-			<div class="flex items-center gap-2 text-zinc-400">
-				<span class="text-green-400">✓</span>
-				<span>Open decks for new cards</span>
-			</div>
-			<div class="flex items-center gap-2 text-zinc-400">
-				<span class="text-green-400">✓</span>
-				<span>Defeat zombies before end of day</span>
-			</div>
+		<div data-goal="success-checklist" class="space-y-2 text-xs">
+			<div class="text-zinc-500">Goals will update as you play.</div>
 		</div>
 	</div>
 }

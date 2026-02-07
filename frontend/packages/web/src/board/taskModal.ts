@@ -4,6 +4,7 @@ import { donegeonDefs } from "../model/catalog";
 import type { TaskDTO, ModifierSchema, ModalRefs, TaskModifierSlotDTO } from "../model/types";
 import { updateCard } from "./immut";
 import { scheduleLiveSync } from "./liveSync";
+import { sendCommand } from "./api";
 
 function schemaFromModifiers(mods: TaskModifierSlotDTO[]): ModifierSchema {
   let showDueDate = false
@@ -255,6 +256,16 @@ function ensureModalMounted() {
           },
         });
       }
+
+      // Persist board card fields in server board state so refresh keeps task card contents.
+      await sendCommand("task.set_title", {
+        taskCardId: ctx.cardId,
+        title: saved.title ?? "",
+      });
+      await sendCommand("task.set_description", {
+        taskCardId: ctx.cardId,
+        description: saved.description ?? "",
+      });
 
       scheduleLiveSync(ctx.engine);
 

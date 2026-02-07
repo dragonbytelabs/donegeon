@@ -9,6 +9,7 @@ import (
 	"donegeon/internal/auth"
 	"donegeon/internal/board"
 	"donegeon/internal/config"
+	"donegeon/internal/player"
 	"donegeon/internal/task"
 	"donegeon/ui/page"
 
@@ -38,18 +39,42 @@ func main() {
 	mux.HandleFunc("/api/auth/session", authHandler.Session)
 	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
 
+	// ---- Player profile / economy ----
+	playerRepo, err := player.NewFileRepo("data/player")
+	if err != nil {
+		log.Fatalf("init player repo: %v", err)
+	}
+	playerHandler := player.NewHandler()
+	playerHandler.SetRepoResolver(func(r *http.Request) *player.FileRepo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return playerRepo
+		}
+		return playerRepo.ForUser(u.ID)
+	})
+	mux.Handle("/api/player/state", authService.RequireAPI(http.HandlerFunc(playerHandler.State)))
+	mux.Handle("/api/player/unlock", authService.RequireAPI(http.HandlerFunc(playerHandler.Unlock)))
+
 	// ---- Task API ----
 	taskFileRepo, err := task.NewFileRepo("data/tasks")
 	if err != nil {
 		log.Fatalf("init task repo: %v", err)
 	}
 	taskHandler := task.NewHandler(taskFileRepo)
+	taskHandler.SetConfig(cfg)
 	taskHandler.SetRepoResolver(func(r *http.Request) task.Repo {
 		u, ok := auth.UserFromContext(r.Context())
 		if !ok {
 			return taskFileRepo
 		}
 		return taskFileRepo.ForUser(u.ID)
+	})
+	taskHandler.SetPlayerResolver(func(r *http.Request) *player.FileRepo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return playerRepo
+		}
+		return playerRepo.ForUser(u.ID)
 	})
 
 	mux.Handle("/api/tasks", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksRoot)))      // GET,POST /api/tasks
@@ -80,6 +105,13 @@ func main() {
 			return taskFileRepo
 		}
 		return taskFileRepo.ForUser(u.ID)
+	})
+	boardHandler.SetPlayerResolver(func(r *http.Request) *player.FileRepo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return playerRepo
+		}
+		return playerRepo.ForUser(u.ID)
 	})
 
 	mux.Handle("/api/board/state", authService.RequireAPI(http.HandlerFunc(boardHandler.GetState))) // GET /api/board/state

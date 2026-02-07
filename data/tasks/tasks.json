@@ -1,20 +1,16 @@
 {
   "users": {
-    "usr_44815436f58941e7": {
+    "usr_838f48afd4fb1a61": {
       "tasks": {
-        "task_6f6f2ab12cea8233": {
-          "id": "task_6f6f2ab12cea8233",
-          "title": "task trash out",
-          "description": "The trash needs to be taken out every thursday",
+        "task_b7339b589de4f852": {
+          "id": "task_b7339b589de4f852",
+          "title": "asdf",
+          "description": "asdf",
           "done": false,
-          "project": "homebase",
-          "tags": [
-            "home",
-            "quick"
-          ],
+          "project": "inbox",
           "nextAction": false,
-          "createdAt": "2026-02-06T22:59:12.13306-05:00",
-          "updatedAt": "2026-02-06T22:59:12.13306-05:00"
+          "createdAt": "2026-02-07T00:06:45.927145-05:00",
+          "updatedAt": "2026-02-07T00:06:45.927145-05:00"
         }
       },
       "liveIndex": {}

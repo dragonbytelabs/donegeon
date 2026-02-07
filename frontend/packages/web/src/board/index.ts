@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   applyPan(boardEl);
   setupGoalsMenu();
-  loadInventory();
+  await loadInventory();
 
   const engine = new Engine();
   let serverState = await fetchBoardState();
@@ -66,7 +66,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     const ev = e as CustomEvent<{ stackId: string; cardIndex: number }>;
     const { stackId, cardIndex } = ev.detail;
 
-    console.log(">>>>>> look here: ", { engine, stackId, cardIndex });
     void openTaskModal({ engine, stackId, cardIndex });
   });
 

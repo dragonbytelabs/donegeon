@@ -108,10 +108,17 @@ func (v *Validator) ValidateStackMerge(
 	// Get the kinds of cards involved
 	targetKinds := v.getStackCardKinds(state, target)
 	sourceKinds := v.getStackCardKinds(state, source)
+	hasTaskAcrossMerge := targetKinds["task"] || sourceKinds["task"]
 
 	// Check disallowed pairs
 	for _, pair := range v.cfg.Rules.Stacking.Disallowed {
 		if len(pair) != 2 {
+			continue
+		}
+		// Special case: modifiers should still be attachable to task stacks
+		// even if a villager is already in that stack.
+		if hasTaskAcrossMerge &&
+			((pair[0] == "modifier" && pair[1] == "villager") || (pair[0] == "villager" && pair[1] == "modifier")) {
 			continue
 		}
 		// Check if any target kind + source kind matches a disallowed pair
@@ -186,10 +193,17 @@ func isModifierDef(defID model.CardDefID) bool {
 // extractKind extracts the kind from a def ID (e.g., "task.blank" -> "task").
 func extractKind(defID model.CardDefID) string {
 	s := string(defID)
+	prefix := s
 	for i, c := range s {
 		if c == '.' {
-			return s[:i]
+			prefix = s[:i]
+			break
 		}
 	}
-	return s
+	switch prefix {
+	case "mod":
+		return "modifier"
+	default:
+		return prefix
+	}
 }

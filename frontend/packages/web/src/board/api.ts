@@ -176,8 +176,20 @@ export function cmdStackRemove(stackId: string) {
   return sendCommand("stack.remove", { stackId });
 }
 
+export function cmdLootCollectStack(stackId: string) {
+  return sendCommand("loot.collect_stack", { stackId });
+}
+
 export function cmdTaskCreateBlank(x: number, y: number) {
   return sendCommand("task.create_blank", { x, y });
+}
+
+export function cmdTaskSpawnExisting(taskId: string, x: number, y: number) {
+  return sendCommand("task.spawn_existing", { taskId, x, y });
+}
+
+export function cmdTaskAssignVillager(taskStackId: string, villagerStackId: string, targetStackId?: string) {
+  return sendCommand("task.assign_villager", { taskStackId, villagerStackId, targetStackId });
 }
 
 export function cmdBoardSeedDefault(deckRowY: number) {

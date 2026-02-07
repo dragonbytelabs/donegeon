@@ -519,7 +519,7 @@ decks:
             amount: 1
             weight: 9
           - card_type: "loot"
-            loot_id: "wood"
+            loot_id: "parts"
             amount: 1
             weight: 4
 

@@ -2,15 +2,20 @@ package task
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"donegeon/internal/config"
 	"donegeon/internal/model"
+	"donegeon/internal/player"
 )
 
 type Handler struct {
-	repo         Repo
-	repoResolver func(*http.Request) Repo
+	repo           Repo
+	repoResolver   func(*http.Request) Repo
+	playerResolver func(*http.Request) *player.FileRepo
+	cfg            *config.Config
 }
 
 func NewHandler(repo Repo) *Handler {
@@ -21,6 +26,14 @@ func (h *Handler) SetRepoResolver(fn func(*http.Request) Repo) {
 	h.repoResolver = fn
 }
 
+func (h *Handler) SetPlayerResolver(fn func(*http.Request) *player.FileRepo) {
+	h.playerResolver = fn
+}
+
+func (h *Handler) SetConfig(cfg *config.Config) {
+	h.cfg = cfg
+}
+
 func (h *Handler) repoForRequest(r *http.Request) Repo {
 	if h.repoResolver != nil {
 		if repo := h.repoResolver(r); repo != nil {
@@ -28,6 +41,13 @@ func (h *Handler) repoForRequest(r *http.Request) Repo {
 		}
 	}
 	return h.repo
+}
+
+func (h *Handler) playerForRequest(r *http.Request) *player.FileRepo {
+	if h.playerResolver == nil {
+		return nil
+	}
+	return h.playerResolver(r)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -74,9 +94,48 @@ func parseBoolPtr(s string) *bool {
 	return nil
 }
 
+func isUnlocked(repo *player.FileRepo, feature string) bool {
+	if repo == nil {
+		return true
+	}
+	return repo.IsUnlocked(feature)
+}
+
+func denyLockedFeature(w http.ResponseWriter, feature string) {
+	writeErr(w, http.StatusForbidden, "feature locked: "+feature)
+}
+
+func (h *Handler) completionRequiresAssignedVillager() bool {
+	if h.cfg == nil {
+		return false
+	}
+	return h.cfg.Tasks.Processing.CompletionRequiresAssignedVillager
+}
+
+func (h *Handler) taskWorkStaminaCost() int {
+	if h.cfg == nil {
+		return 1
+	}
+	if h.cfg.Villagers.Actions.WorkTask.StaminaCost <= 0 {
+		return 1
+	}
+	return h.cfg.Villagers.Actions.WorkTask.StaminaCost
+}
+
+func (h *Handler) villagerBaseMaxStamina() int {
+	if h.cfg == nil {
+		return 6
+	}
+	if h.cfg.Villagers.Defaults.BaseMaxStamina <= 0 {
+		return 6
+	}
+	return h.cfg.Villagers.Defaults.BaseMaxStamina
+}
+
 // /api/tasks  (collection)
 func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 	repo := h.repoForRequest(r)
+	playerRepo := h.playerForRequest(r)
 
 	switch r.Method {
 	case http.MethodGet:
@@ -98,6 +157,18 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 		var in model.TaskUpsert
 		if err := decodeJSON(r, &in); err != nil {
 			writeErr(w, 400, "bad json")
+			return
+		}
+		if in.DueDate != nil && strings.TrimSpace(*in.DueDate) != "" && !isUnlocked(playerRepo, player.FeatureTaskDueDate) {
+			denyLockedFeature(w, player.FeatureTaskDueDate)
+			return
+		}
+		if in.NextAction && !isUnlocked(playerRepo, player.FeatureTaskNextAction) {
+			denyLockedFeature(w, player.FeatureTaskNextAction)
+			return
+		}
+		if in.Recurrence != nil && !isUnlocked(playerRepo, player.FeatureTaskRecurrence) {
+			denyLockedFeature(w, player.FeatureTaskRecurrence)
 			return
 		}
 		in.Project = normalizeProject(in.Project)
@@ -134,6 +205,7 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 // /api/tasks/{id}
 func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 	repo := h.repoForRequest(r)
+	playerRepo := h.playerForRequest(r)
 
 	tail := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	tail = strings.Trim(tail, "/")
@@ -166,6 +238,33 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 			if err := decodeJSON(r, &p); err != nil {
 				writeErr(w, 400, "bad json")
 				return
+			}
+			if p.DueDate != nil && strings.TrimSpace(*p.DueDate) != "" && !isUnlocked(playerRepo, player.FeatureTaskDueDate) {
+				denyLockedFeature(w, player.FeatureTaskDueDate)
+				return
+			}
+			if p.NextAction != nil && *p.NextAction && !isUnlocked(playerRepo, player.FeatureTaskNextAction) {
+				denyLockedFeature(w, player.FeatureTaskNextAction)
+				return
+			}
+			if p.Recurrence != nil && !isUnlocked(playerRepo, player.FeatureTaskRecurrence) {
+				denyLockedFeature(w, player.FeatureTaskRecurrence)
+				return
+			}
+			if p.Done != nil && *p.Done && h.completionRequiresAssignedVillager() {
+				cur, err := repo.Get(model.TaskID(id))
+				if err == ErrNotFound {
+					writeErr(w, 404, "not found")
+					return
+				}
+				if err != nil {
+					writeErr(w, 500, err.Error())
+					return
+				}
+				if cur.AssignedVillagerID == nil || strings.TrimSpace(*cur.AssignedVillagerID) == "" {
+					writeErr(w, 400, "task completion requires an assigned villager")
+					return
+				}
 			}
 
 			t, err := repo.Update(model.TaskID(id), p)
@@ -227,6 +326,83 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 200, t)
 			return
 
+		default:
+			writeErr(w, 405, "method not allowed")
+			return
+		}
+	}
+
+	// /api/tasks/{id}/process
+	if len(parts) == 2 && parts[1] == "process" {
+		switch r.Method {
+		case http.MethodPost:
+			var in struct {
+				MarkDone bool `json:"markDone"`
+			}
+			if r.Body != nil {
+				_ = decodeJSON(r, &in)
+			}
+
+			cur, err := repo.Get(model.TaskID(id))
+			if err == ErrNotFound {
+				writeErr(w, 404, "not found")
+				return
+			}
+			if err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+			if h.completionRequiresAssignedVillager() {
+				if cur.AssignedVillagerID == nil || strings.TrimSpace(*cur.AssignedVillagerID) == "" {
+					writeErr(w, 400, "task processing requires an assigned villager")
+					return
+				}
+			}
+
+			staminaRemaining := -1
+			if cur.AssignedVillagerID != nil && strings.TrimSpace(*cur.AssignedVillagerID) != "" {
+				if pRepo := h.playerForRequest(r); pRepo != nil {
+					cost := h.taskWorkStaminaCost()
+					ok, remaining, _, err := pRepo.SpendVillagerStamina(*cur.AssignedVillagerID, cost, h.villagerBaseMaxStamina())
+					if err != nil {
+						writeErr(w, 500, "could not consume villager stamina")
+						return
+					}
+					if !ok {
+						writeErr(w, 400, fmt.Sprintf("villager stamina too low (need %d)", cost))
+						return
+					}
+					staminaRemaining = remaining
+				}
+			}
+
+			worked := true
+			inc := 1
+			patch := Patch{
+				WorkedToday:         &worked,
+				ProcessedCountDelta: &inc,
+			}
+			if in.MarkDone {
+				done := true
+				patch.Done = &done
+			}
+
+			updated, err := repo.Update(model.TaskID(id), patch)
+			if err == ErrNotFound {
+				writeErr(w, 404, "not found")
+				return
+			}
+			if err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+
+			writeJSON(w, 200, map[string]any{
+				"ok":               true,
+				"task":             updated,
+				"staminaRemaining": staminaRemaining,
+			})
+			return
 		default:
 			writeErr(w, 405, "method not allowed")
 			return

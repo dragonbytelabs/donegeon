@@ -7,6 +7,7 @@ import (
 
 	"donegeon/internal/config"
 	"donegeon/internal/model"
+	"donegeon/internal/player"
 	"donegeon/internal/task"
 )
 
@@ -18,6 +19,7 @@ type Handler struct {
 	cfg              *config.Config
 	boardIDResolver  func(*http.Request) string
 	taskRepoResolver func(*http.Request) task.Repo
+	playerResolver   func(*http.Request) *player.FileRepo
 }
 
 // NewHandler creates a new board handler.
@@ -36,6 +38,10 @@ func (h *Handler) SetBoardIDResolver(fn func(*http.Request) string) {
 
 func (h *Handler) SetTaskRepoResolver(fn func(*http.Request) task.Repo) {
 	h.taskRepoResolver = fn
+}
+
+func (h *Handler) SetPlayerResolver(fn func(*http.Request) *player.FileRepo) {
+	h.playerResolver = fn
 }
 
 func (h *Handler) boardIDFromRequest(r *http.Request) string {
@@ -58,6 +64,13 @@ func (h *Handler) taskRepoFromRequest(r *http.Request) task.Repo {
 		}
 	}
 	return h.taskRepo
+}
+
+func (h *Handler) playerRepoFromRequest(r *http.Request) *player.FileRepo {
+	if h.playerResolver == nil {
+		return nil
+	}
+	return h.playerResolver(r)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -216,7 +229,7 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patch, err := h.executeCommand(state, h.taskRepoFromRequest(r), req.Cmd, req.Args)
+	patch, err := h.executeCommand(state, h.taskRepoFromRequest(r), h.playerRepoFromRequest(r), req.Cmd, req.Args)
 	if err != nil {
 		writeJSON(w, 400, CommandResponse{
 			OK:    false,
@@ -238,7 +251,7 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 }
 
 // executeCommand dispatches the command to the appropriate handler.
-func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, cmd string, args map[string]any) (any, error) {
+func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, playerRepo *player.FileRepo, cmd string, args map[string]any) (any, error) {
 	switch cmd {
 	case "board.seed_default":
 		return h.cmdBoardSeedDefault(state, args)
@@ -262,6 +275,8 @@ func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, cm
 		return h.cmdStackRemove(state, args)
 	case "task.create_blank":
 		return h.cmdTaskCreateBlank(state, taskRepo, args)
+	case "task.spawn_existing":
+		return h.cmdTaskSpawnExisting(state, taskRepo, playerRepo, args)
 	case "task.set_title":
 		return h.cmdTaskSetTitle(state, taskRepo, args)
 	case "task.set_description":
@@ -269,7 +284,9 @@ func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, cm
 	case "task.add_modifier":
 		return h.cmdTaskAddModifier(state, args)
 	case "task.assign_villager":
-		return h.cmdTaskAssignVillager(state, args)
+		return h.cmdTaskAssignVillager(state, taskRepo, args)
+	case "loot.collect_stack":
+		return h.cmdLootCollectStack(state, taskRepo, playerRepo, args)
 	default:
 		return nil, fmt.Errorf("unknown command: %s", cmd)
 	}
@@ -299,6 +316,22 @@ func getInt(args map[string]any, key string) (int, error) {
 		return 0, fmt.Errorf("field %s must be a number", key)
 	}
 	return int(f), nil
+}
+
+// Helper to get optional string.
+func getStringOr(args map[string]any, key string) (string, error) {
+	v, ok := args[key]
+	if !ok {
+		return "", nil
+	}
+	if v == nil {
+		return "", nil
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("field %s must be a string", key)
+	}
+	return s, nil
 }
 
 // Helper to get optional int with default
@@ -402,6 +435,7 @@ func (h *Handler) cmdStackMerge(state *model.BoardState, args map[string]any) (a
 	}
 
 	state.MergeStacks(model.StackID(targetID), model.StackID(sourceID))
+	ensureTaskFaceCard(state, target)
 
 	return map[string]any{
 		"target":        target,
@@ -573,6 +607,7 @@ func (h *Handler) cmdTaskSetTitle(state *model.BoardState, taskRepo task.Repo, a
 	if card.Data == nil {
 		card.Data = make(map[string]any)
 	}
+	card.DefID = "task.instance"
 	card.Data["title"] = title
 
 	// Sync to task repo if linked
@@ -606,6 +641,7 @@ func (h *Handler) cmdTaskSetDescription(state *model.BoardState, taskRepo task.R
 	if card.Data == nil {
 		card.Data = make(map[string]any)
 	}
+	card.DefID = "task.instance"
 	card.Data["description"] = description
 
 	// Sync to task repo if linked
@@ -648,6 +684,7 @@ func (h *Handler) cmdTaskAddModifier(state *model.BoardState, args map[string]an
 
 	// Add to stack
 	stack.Cards = append(stack.Cards, modCard.ID)
+	ensureTaskFaceCard(state, stack)
 
 	return map[string]any{
 		"stack":    stack,
@@ -656,7 +693,7 @@ func (h *Handler) cmdTaskAddModifier(state *model.BoardState, args map[string]an
 }
 
 // task.assign_villager { taskStackId, villagerStackId }
-func (h *Handler) cmdTaskAssignVillager(state *model.BoardState, args map[string]any) (any, error) {
+func (h *Handler) cmdTaskAssignVillager(state *model.BoardState, taskRepo task.Repo, args map[string]any) (any, error) {
 	taskStackID, err := getString(args, "taskStackId")
 	if err != nil {
 		return nil, err
@@ -675,9 +712,51 @@ func (h *Handler) cmdTaskAssignVillager(state *model.BoardState, args map[string
 	if villagerStack == nil {
 		return nil, fmt.Errorf("villager stack not found: %s", villagerStackID)
 	}
+	targetStackID, err := getStringOr(args, "targetStackId")
+	if err != nil {
+		return nil, err
+	}
+	if targetStackID != "" && targetStackID != taskStackID && targetStackID != villagerStackID {
+		return nil, fmt.Errorf("targetStackId must match task or villager stack")
+	}
+
+	taskCardID := ""
+	taskID := ""
+	for _, cid := range taskStack.Cards {
+		c := state.GetCard(cid)
+		if c == nil {
+			continue
+		}
+		if c.DefID == "task.blank" || c.DefID == "task.instance" {
+			taskCardID = string(c.ID)
+			if c.Data != nil {
+				if v, ok := c.Data["taskId"].(string); ok {
+					taskID = v
+				}
+			}
+			break
+		}
+	}
 
 	// Merge villager stack into task stack
+	if targetStackID == villagerStackID {
+		// Preserve "receiver" position when the user drops task onto villager.
+		taskStack.Pos = villagerStack.Pos
+	}
 	state.MergeStacks(model.StackID(taskStackID), model.StackID(villagerStackID))
+	ensureTaskFaceCard(state, taskStack)
+	if taskCardID != "" {
+		if taskCard := state.GetCard(model.CardID(taskCardID)); taskCard != nil {
+			if taskCard.Data == nil {
+				taskCard.Data = map[string]any{}
+			}
+			taskCard.Data["assignedVillagerId"] = villagerStackID
+		}
+	}
+	if taskRepo != nil && taskID != "" {
+		assigned := villagerStackID
+		_, _ = taskRepo.Update(model.TaskID(taskID), task.Patch{AssignedVillagerID: &assigned})
+	}
 
 	return map[string]any{
 		"stack":           taskStack,
