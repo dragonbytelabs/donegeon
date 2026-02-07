@@ -56,9 +56,10 @@ type OverdueRules struct {
 }
 
 type ZombieSpawn struct {
-	Enabled        bool `yaml:"enabled" json:"enabled"`
-	PerOverdueTask int  `yaml:"per_overdue_task" json:"per_overdue_task"`
-	CapPerDay      int  `yaml:"cap_per_day" json:"cap_per_day"`
+	Enabled        bool     `yaml:"enabled" json:"enabled"`
+	PerOverdueTask int      `yaml:"per_overdue_task" json:"per_overdue_task"`
+	CapPerDay      int      `yaml:"cap_per_day" json:"cap_per_day"`
+	SpawnChance    *float64 `yaml:"spawn_chance" json:"spawn_chance,omitempty"`
 }
 
 type Penalties struct {

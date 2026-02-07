@@ -33,6 +33,7 @@ world:
         enabled: true
         per_overdue_task: 1
         cap_per_day: 5
+        spawn_chance: 0.65
       penalties:
         # Applied when an overdue zombie exists (or at tick when spawning)
         deck_cost_multiplier_per_zombie: 0.05 # +5% cost per active zombie (stacking)

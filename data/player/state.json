@@ -3,29 +3,26 @@
     "usr_838f48afd4fb1a61": {
       "loot": {
         "blueprint_shard": 0,
-        "coin": 4,
+        "coin": 6,
         "gear": 0,
         "ink": 0,
         "paper": 0,
-        "parts": 3
+        "parts": 8
       },
       "unlocks": {
-        "task.due_date": true,
-        "task.next_action": true,
-        "task.recurrence": true
-      },
-      "villagerStamina": {
-        "stack_5": 1
+        "task.due_date": false,
+        "task.next_action": false,
+        "task.recurrence": false
       },
       "villagers": {
-        "stack_5": {
-          "xp": 0,
+        "stack_6": {
+          "xp": 10,
           "level": 1
         }
       },
       "metrics": {
         "overrun_level": 0,
-        "tasks_completed": 0,
+        "tasks_completed": 1,
         "zombies_cleared": 0,
         "zombies_seen": 0
       },

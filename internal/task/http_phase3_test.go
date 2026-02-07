@@ -227,6 +227,74 @@ func TestTasksSub_ProcessConsumesStaminaUntilDepleted(t *testing.T) {
 	}
 }
 
+func TestTasksSub_ToggleDonePreservesTaskDetails(t *testing.T) {
+	h, repo, _ := newTaskHandlerForTests(t, false)
+	inbox := "inbox"
+	due := "2026-02-09"
+	project := "home"
+
+	created, err := repo.Create(model.Task{
+		Title:       "Take trash out",
+		Description: "Thursday night",
+		Done:        true,
+		Project:     &project,
+		Tags:        []string{"home", "weekly"},
+		Modifiers: []model.TaskModifierSlot{
+			{DefID: "mod.deadline_pin"},
+			{DefID: "mod.recurring"},
+		},
+		DueDate: &due,
+		Recurrence: &model.Recurrence{
+			Type:     "weekly",
+			Interval: 1,
+		},
+		NextAction: true,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if _, err := repo.Update(created.ID, Patch{Project: &inbox}); err != nil {
+		t.Fatalf("set inbox project: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	h.TasksSub(rec, jsonReq(http.MethodPatch, "/api/tasks/"+string(created.ID), map[string]any{
+		"done": false,
+	}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	got, err := repo.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if got.Done {
+		t.Fatalf("expected task to be pending after toggle")
+	}
+	if got.Title != "Take trash out" || got.Description != "Thursday night" {
+		t.Fatalf("expected title/description to persist, got title=%q desc=%q", got.Title, got.Description)
+	}
+	if got.Project == nil || *got.Project != inbox {
+		t.Fatalf("expected project to persist, got %+v", got.Project)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "home" || got.Tags[1] != "weekly" {
+		t.Fatalf("expected tags to persist, got %+v", got.Tags)
+	}
+	if got.DueDate == nil || *got.DueDate != due {
+		t.Fatalf("expected due date to persist, got %+v", got.DueDate)
+	}
+	if got.Recurrence == nil || got.Recurrence.Type != "weekly" || got.Recurrence.Interval != 1 {
+		t.Fatalf("expected recurrence to persist, got %+v", got.Recurrence)
+	}
+	if !got.NextAction {
+		t.Fatalf("expected nextAction to persist")
+	}
+	if len(got.Modifiers) != 2 {
+		t.Fatalf("expected modifiers to persist, got %+v", got.Modifiers)
+	}
+}
+
 func TestTasksRoot_CreateLockedFieldsAllowedWithAttachedModifier(t *testing.T) {
 	h, _, _ := newTaskHandlerForTests(t, false)
 

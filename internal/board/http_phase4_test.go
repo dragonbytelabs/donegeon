@@ -200,3 +200,43 @@ func TestCommand_ZombieClear_RemovesZombieAndGrantsReward(t *testing.T) {
 		t.Fatalf("expected villager stamina 4 after clear, got %d", stamina)
 	}
 }
+
+func TestCommand_WorldEndDay_ZombieSpawnChanceZeroSkipsSpawn(t *testing.T) {
+	taskRepo := task.NewMemoryRepo()
+	playerRepo, err := player.NewFileRepo(t.TempDir())
+	if err != nil {
+		t.Fatalf("new player repo: %v", err)
+	}
+	playerRepo = playerRepo.ForUser("u-phase4-chance")
+
+	cfg := testBoardConfig()
+	zeroChance := 0.0
+	cfg.World.DayTick.OverdueRules.ZombieSpawn = config.ZombieSpawn{
+		Enabled:        true,
+		PerOverdueTask: 1,
+		CapPerDay:      5,
+		SpawnChance:    &zeroChance,
+	}
+	cfg.Zombies.Types = []config.ZombieType{{ID: "default_zombie"}}
+	cfg.Tasks.DueDate.GraceHours = 0
+
+	inbox := "inbox"
+	yesterday := time.Now().AddDate(0, 0, -1).Format(ymdLayout)
+	if _, err := taskRepo.Create(model.Task{
+		Title:   "Overdue no spawn",
+		Project: &inbox,
+		DueDate: &yesterday,
+	}); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	h := NewHandler(NewMemoryRepo(), taskRepo, cfg)
+	state := model.NewBoardState()
+
+	if _, err := h.executeCommand(state, taskRepo, playerRepo, "world.end_day", map[string]any{}); err != nil {
+		t.Fatalf("world.end_day: %v", err)
+	}
+	if got := countZombieStacks(state); got != 0 {
+		t.Fatalf("expected 0 zombies with spawn chance 0, got %d", got)
+	}
+}

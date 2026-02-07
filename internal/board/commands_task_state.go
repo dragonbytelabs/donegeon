@@ -45,6 +45,51 @@ func (h *Handler) cmdTaskSetTaskID(state *model.BoardState, taskRepo task.Repo, 
 	}, nil
 }
 
+// task.complete_by_task_id { taskId }
+func (h *Handler) cmdTaskCompleteByTaskID(state *model.BoardState, taskRepo task.Repo, playerRepo *player.FileRepo, args map[string]any) (any, error) {
+	taskID, err := getString(args, "taskId")
+	if err != nil {
+		return nil, err
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, fmt.Errorf("taskId is required")
+	}
+
+	for _, stack := range state.Stacks {
+		if stack == nil {
+			continue
+		}
+		for _, cid := range stack.Cards {
+			card := state.GetCard(cid)
+			if card == nil || extractKind(card.DefID) != "task" || card.Data == nil {
+				continue
+			}
+			v, _ := card.Data["taskId"].(string)
+			if strings.TrimSpace(v) != taskID {
+				continue
+			}
+			return h.cmdTaskCompleteStack(state, taskRepo, playerRepo, map[string]any{
+				"stackId": string(stack.ID),
+			})
+		}
+	}
+
+	// Fallback: if the task card isn't on the board anymore, keep task state consistent.
+	if taskRepo != nil {
+		done := true
+		if _, err := taskRepo.Update(model.TaskID(taskID), task.Patch{Done: &done}); err != nil {
+			return nil, err
+		}
+		_ = taskRepo.SetLive(model.TaskID(taskID), false)
+	}
+
+	return map[string]any{
+		"completedTaskId": taskID,
+		"mode":            "repo_only",
+	}, nil
+}
+
 // task.complete_stack { stackId }
 func (h *Handler) cmdTaskCompleteStack(state *model.BoardState, taskRepo task.Repo, playerRepo *player.FileRepo, args map[string]any) (any, error) {
 	stackID, err := getString(args, "stackId")

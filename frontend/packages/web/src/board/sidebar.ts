@@ -4,6 +4,7 @@ import type { DonegeonDefId } from "../model/catalog";
 import { clientToBoard } from "./geom.dom";
 import { getPan } from "./pan";
 import { cmdCardSpawn, reloadBoard } from "./api";
+import { notify } from "./notify";
 
 type TaskDTO = {
   done: boolean;
@@ -13,6 +14,22 @@ type TaskDTO = {
 
 type PlayerStateDTO = {
   villagerStamina?: Record<string, number>;
+};
+
+type QuestItemDTO = {
+  id: string;
+  title: string;
+  scope: string;
+  progress: number;
+  target: number;
+  completed: boolean;
+};
+
+type QuestStateDTO = {
+  daily?: QuestItemDTO[];
+  weekly?: QuestItemDTO[];
+  monthly?: QuestItemDTO[];
+  seasonal?: QuestItemDTO[];
 };
 
 type VillagerSnapshot = {
@@ -103,6 +120,7 @@ function makeChecklistRow(label: string, done: boolean): HTMLElement {
 }
 
 function renderChecklist(
+  quests: QuestStateDTO | null,
   assignedTasks: number,
   staminaSpentWell: boolean,
   completedToday: number,
@@ -110,14 +128,29 @@ function renderChecklist(
   zombiesCleared: boolean
 ) {
   const containers = allGoalNodes("success-checklist");
+  const dynamicRows = [
+    ...(quests?.daily ?? []).slice(0, 2),
+    ...(quests?.weekly ?? []).slice(0, 1),
+    ...(quests?.monthly ?? []).slice(0, 1),
+    ...(quests?.seasonal ?? []).slice(0, 1),
+  ];
+
   for (const el of containers) {
     el.innerHTML = "";
+    if (dynamicRows.length > 0) {
+      dynamicRows.forEach((q) => {
+        const label = `${q.scope}: ${q.title} (${Math.min(q.progress, q.target)}/${q.target})`;
+        el.appendChild(makeChecklistRow(label, q.completed));
+      });
+      continue;
+    }
+
     el.append(
       makeChecklistRow("Assign tasks to villagers", assignedTasks > 0),
       makeChecklistRow("Use stamina efficiently", staminaSpentWell),
       makeChecklistRow("Complete tasks today", completedToday > 0),
       makeChecklistRow("Open decks for new cards", openedDeckCards > 0),
-      makeChecklistRow("Clear zombies before end of day", zombiesCleared)
+      makeChecklistRow("Clear zombies before end of day", zombiesCleared),
     );
   }
 }
@@ -237,6 +270,12 @@ async function fetchPlayerState(): Promise<PlayerStateDTO> {
   return (await res.json()) as PlayerStateDTO;
 }
 
+async function fetchQuestState(): Promise<QuestStateDTO> {
+  const res = await fetch("/api/quests/state");
+  if (!res.ok) throw new Error(`GET /api/quests/state failed: ${res.status}`);
+  return (await res.json()) as QuestStateDTO;
+}
+
 export function initShell(engine: Engine, boardRoot: HTMLElement) {
   const sidebarToggle = qs<HTMLButtonElement>("#sidebarToggle");
   const sidebar = qs<HTMLElement>("#sidebar");
@@ -280,8 +319,16 @@ export function initShell(engine: Engine, boardRoot: HTMLElement) {
 
       void cmdCardSpawn(defId, p.x, p.y)
         .then(() => reloadBoard(engine))
+        .then(() => {
+          if (defId === "task.blank") {
+            notify("Task created", "success", 1500);
+          } else {
+            notify("Card created", "info", 1200);
+          }
+        })
         .catch((err) => {
           console.warn("sidebar spawn sync failed", err);
+          notify(`Spawn failed: ${String((err as Error)?.message ?? err)}`, "error");
           void reloadBoard(engine).catch(() => {});
         });
       if (window.matchMedia("(max-width: 768px)").matches) closeSidebar();
@@ -291,6 +338,7 @@ export function initShell(engine: Engine, boardRoot: HTMLElement) {
   let boardSnapshot: BoardSnapshot = collectBoardSnapshot(engine);
   let tasks: TaskDTO[] = [];
   let villagerStamina: Record<string, number> = {};
+  let quests: QuestStateDTO | null = null;
   let remoteRefreshPending = false;
 
   const renderGoals = () => {
@@ -316,6 +364,7 @@ export function initShell(engine: Engine, boardRoot: HTMLElement) {
     });
     const zombiesCleared = completedToday > 0 && boardSnapshot.zombieCount === 0;
     renderChecklist(
+      quests,
       assignedTasksTotal,
       staminaSpentWell,
       completedToday,
@@ -326,9 +375,10 @@ export function initShell(engine: Engine, boardRoot: HTMLElement) {
 
   const refreshRemote = async () => {
     try {
-      const [taskList, playerState] = await Promise.all([fetchTasksAll(), fetchPlayerState()]);
+      const [taskList, playerState, questState] = await Promise.all([fetchTasksAll(), fetchPlayerState(), fetchQuestState()]);
       tasks = taskList;
       villagerStamina = playerState.villagerStamina ?? {};
+      quests = questState;
       renderGoals();
     } catch (err) {
       console.warn("goals sidebar refresh failed", err);

@@ -56,3 +56,18 @@ tasks:
       - web-build
     cmds:
       - task --parallel tailwind-watch templ web-watch
+
+  backup:
+    desc: Create a data backup archive
+    cmds:
+      - ./scripts/backup.sh data
+
+  restore:
+    desc: Restore data from backup archive
+    cmds:
+      - ./scripts/restore.sh {{.ARCHIVE}}
+
+  backup-drill:
+    desc: Run backup/restore drill and verify digest parity
+    cmds:
+      - ./scripts/backup_drill.sh data /tmp

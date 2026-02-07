@@ -7,7 +7,9 @@ import { scheduleSave } from "./storage";
 import {
   cmdDeckOpenPack,
   cmdDeckSpawnPack,
+  cmdFoodConsume,
   cmdLootCollectStack,
+  cmdResourceGather,
   cmdStackMerge,
   cmdStackMove,
   cmdStackSplit,
@@ -15,7 +17,9 @@ import {
   cmdZombieClear,
   reloadBoard,
 } from "./api";
+import { startStackActivity, clearStackActivity } from "./activity";
 import { isCollectableLoot, refreshInventory } from "./inventory";
+import { notify } from "./notify";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
 const DRAG_CLICK_SLOP_PX = 6; // movement threshold to still count as click
@@ -136,6 +140,36 @@ function stackHasDef(stack: any, defId: string): boolean {
     if (c?.def?.id === defId) return true;
   }
   return false;
+}
+
+function firstCardByKind(stack: any, kind: string): any | null {
+  if (!stack) return null;
+  const cards = stack.cards?.[0]?.() ?? [];
+  for (let i = cards.length - 1; i >= 0; i -= 1) {
+    const card = cards[i];
+    if (card?.def?.kind === kind) return card;
+  }
+  return null;
+}
+
+function gatherDurationMs(resourceStack: any): number {
+  const resourceCard = firstCardByKind(resourceStack, "resource");
+  const fromData = Number(resourceCard?.data?.gatherTimeS ?? 0);
+  if (Number.isFinite(fromData) && fromData > 0) {
+    return Math.max(350, fromData * 1000);
+  }
+
+  const defId = String(resourceCard?.def?.id ?? "");
+  switch (defId) {
+    case "resource.scrap_pile":
+      return 10000;
+    case "resource.mushroom_patch":
+      return 8000;
+    case "resource.berry_bush":
+      return 6000;
+    default:
+      return 5000;
+  }
 }
 
 function canCollectStackCard(defId: string): boolean {
@@ -358,9 +392,13 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
 
       void cmdDeckSpawnPack(stackId, p.x, p.y, "deck.first_day_pack")
         .then(() => reloadBoard(engine))
+        .then(() => {
+          notify("Deck pack spawned", "info", 1400);
+        })
         .then(() => scheduleLiveSync(engine))
         .catch((err) => {
           console.warn("deck pack spawn sync failed", err);
+          notify(`Deck spawn failed: ${String((err as Error)?.message ?? err)}`, "error");
           void reloadBoard(engine).catch(() => {});
         });
 
@@ -374,9 +412,13 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
       void cmdDeckOpenPack(stackId, deckIdFromPack)
         .then(() => reloadBoard(engine))
         .then(() => refreshInventory())
+        .then(() => {
+          notify("Deck opened", "success", 1600);
+        })
         .then(() => scheduleLiveSync(engine))
         .catch((err) => {
           console.warn("deck open sync failed", err);
+          notify(`Deck open failed: ${String((err as Error)?.message ?? err)}`, "error");
           void reloadBoard(engine).catch(() => {});
         });
       return;
@@ -430,9 +472,13 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
             void cmdLootCollectStack(ended.stackId)
               .then(() => reloadBoard(engine))
               .then(() => refreshInventory())
+              .then(() => {
+                notify("Card salvaged for loot", "success", 1400);
+              })
               .then(() => scheduleLiveSync(engine))
               .catch((err) => {
                 console.warn("collect sync failed", err);
+                notify(`Collect failed: ${String((err as Error)?.message ?? err)}`, "error");
                 void reloadBoard(engine).catch(() => {});
               });
             return;
@@ -459,9 +505,13 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
             void cmdLootCollectStack(ended.stackId)
               .then(() => reloadBoard(engine))
               .then(() => refreshInventory())
+              .then(() => {
+                notify("Card salvaged for loot", "success", 1400);
+              })
               .then(() => scheduleLiveSync(engine))
               .catch((err) => {
                 console.warn("collect sync failed", err);
+                notify(`Collect failed: ${String((err as Error)?.message ?? err)}`, "error");
                 void reloadBoard(engine).catch(() => {});
               });
             return;
@@ -478,6 +528,10 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
         const sourceHasVillager = stackHasKind(sourceStack, "villager");
         const targetHasZombie = stackHasKind(targetStack, "zombie");
         const sourceHasZombie = stackHasKind(sourceStack, "zombie");
+        const targetHasResource = stackHasKind(targetStack, "resource");
+        const sourceHasResource = stackHasKind(sourceStack, "resource");
+        const targetHasFood = stackHasKind(targetStack, "food");
+        const sourceHasFood = stackHasKind(sourceStack, "food");
 
         if ((targetHasTask && sourceHasVillager) || (sourceHasTask && targetHasVillager)) {
           const taskStackId = targetHasTask ? target : ended.stackId;
@@ -486,8 +540,12 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
             .then(() => reloadBoard(engine))
             .then(() => scheduleLiveSync(engine))
             .then(() => refreshInventory())
+            .then(() => {
+              notify("Villager assigned to task", "success", 1500);
+            })
             .catch((err) => {
               console.warn("assign villager sync failed", err);
+              notify(`Assign failed: ${String((err as Error)?.message ?? err)}`, "error");
               void reloadBoard(engine).catch(() => {});
             });
           return;
@@ -499,9 +557,58 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
           void cmdZombieClear(zombieStackId, villagerStackId, target)
             .then(() => reloadBoard(engine))
             .then(() => refreshInventory())
+            .then(() => {
+              notify("Zombie defeated", "success", 1700);
+            })
             .then(() => scheduleLiveSync(engine))
             .catch((err) => {
               console.warn("zombie clear sync failed", err);
+              notify(`Zombie clear failed: ${String((err as Error)?.message ?? err)}`, "error");
+              void reloadBoard(engine).catch(() => {});
+            });
+          return;
+        }
+
+        if ((targetHasResource && sourceHasVillager) || (sourceHasResource && targetHasVillager)) {
+          const resourceStackId = targetHasResource ? target : ended.stackId;
+          const villagerStackId = targetHasVillager ? target : ended.stackId;
+          const durationMs = gatherDurationMs(engine.getStack(resourceStackId));
+          const actionLabel = stackHasDef(engine.getStack(resourceStackId), "resource.scrap_pile")
+            ? "Mining"
+            : "Gathering";
+
+          void startStackActivity(resourceStackId, actionLabel, durationMs)
+            .then(() => cmdResourceGather(resourceStackId, villagerStackId, target))
+            .then(() => reloadBoard(engine))
+            .then(() => refreshInventory())
+            .then(() => {
+              notify("Resource cycle complete", "success", 1700);
+            })
+            .then(() => scheduleLiveSync(engine))
+            .catch((err) => {
+              console.warn("resource gather sync failed", err);
+              notify(`Gather failed: ${String((err as Error)?.message ?? err)}`, "error");
+              void reloadBoard(engine).catch(() => {});
+            })
+            .finally(() => {
+              clearStackActivity(resourceStackId);
+            });
+          return;
+        }
+
+        if ((targetHasFood && sourceHasVillager) || (sourceHasFood && targetHasVillager)) {
+          const foodStackId = targetHasFood ? target : ended.stackId;
+          const villagerStackId = targetHasVillager ? target : ended.stackId;
+          void cmdFoodConsume(foodStackId, villagerStackId, target)
+            .then(() => reloadBoard(engine))
+            .then(() => refreshInventory())
+            .then(() => {
+              notify("Villager stamina restored", "success", 1600);
+            })
+            .then(() => scheduleLiveSync(engine))
+            .catch((err) => {
+              console.warn("food consume sync failed", err);
+              notify(`Eat failed: ${String((err as Error)?.message ?? err)}`, "error");
               void reloadBoard(engine).catch(() => {});
             });
           return;
@@ -512,6 +619,7 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
           .then(() => scheduleLiveSync(engine))
           .catch((err) => {
             console.warn("merge sync failed", err);
+            notify(`Merge failed: ${String((err as Error)?.message ?? err)}`, "error");
             void reloadBoard(engine).catch(() => {});
           });
       } else {

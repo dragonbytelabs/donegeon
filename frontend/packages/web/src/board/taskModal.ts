@@ -5,6 +5,7 @@ import type { TaskDTO, ModifierSchema, ModalRefs, TaskModifierSlotDTO } from "..
 import { updateCard } from "./immut";
 import { scheduleLiveSync } from "./liveSync";
 import { cmdTaskCompleteStack, cmdTaskSetTaskID, reloadBoard, sendCommand } from "./api";
+import { notify } from "./notify";
 
 function schemaFromModifiers(mods: TaskModifierSlotDTO[]): ModifierSchema {
   let showDueDate = false
@@ -322,6 +323,7 @@ function ensureModalMounted() {
     });
 
     try {
+      const wasNewTask = !ctx.existingTaskId;
       // Persist core text fields to board first so reopen/refresh retains edits
       // even when task API rejects locked fields.
       await sendCommand("task.set_title", {
@@ -382,6 +384,11 @@ function ensureModalMounted() {
       if (saved.done) {
         await cmdTaskCompleteStack(ctx.stackId);
         await reloadBoard(ctx.engine);
+        notify("Task completed", "success", 1700);
+      } else if (wasNewTask) {
+        notify("Task created", "success", 1500);
+      } else {
+        notify("Task updated", "info", 1300);
       }
 
       scheduleLiveSync(ctx.engine);

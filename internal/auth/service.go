@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,6 +32,9 @@ type Service struct {
 	logger *log.Logger
 
 	cookieName     string
+	cookiePath     string
+	cookieDomain   string
+	cookieSameSite http.SameSite
 	otpTTL         time.Duration
 	sessionTTL     time.Duration
 	maxOTPAttempts int
@@ -40,14 +44,33 @@ func NewService(repo *FileRepo, logger *log.Logger) *Service {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Service{
-		repo:           repo,
-		logger:         logger,
-		cookieName:     "donegeon_session",
-		otpTTL:         10 * time.Minute,
-		sessionTTL:     7 * 24 * time.Hour,
-		maxOTPAttempts: 5,
+	svc := &Service{
+		repo:         repo,
+		logger:       logger,
+		cookieName:   envOr("DONEGEON_COOKIE_NAME", "donegeon_session"),
+		cookiePath:   envOr("DONEGEON_COOKIE_PATH", "/"),
+		cookieDomain: strings.TrimSpace(os.Getenv("DONEGEON_COOKIE_DOMAIN")),
+		cookieSameSite: parseSameSiteEnv(
+			os.Getenv("DONEGEON_COOKIE_SAMESITE"),
+			http.SameSiteLaxMode,
+		),
+		otpTTL:         time.Duration(envIntOr("DONEGEON_OTP_TTL_MINUTES", 10)) * time.Minute,
+		sessionTTL:     time.Duration(envIntOr("DONEGEON_SESSION_TTL_HOURS", 24*7)) * time.Hour,
+		maxOTPAttempts: envIntOr("DONEGEON_OTP_MAX_ATTEMPTS", 5),
 	}
+	if strings.TrimSpace(svc.cookiePath) == "" {
+		svc.cookiePath = "/"
+	}
+	if svc.otpTTL <= 0 {
+		svc.otpTTL = 10 * time.Minute
+	}
+	if svc.sessionTTL <= 0 {
+		svc.sessionTTL = 7 * 24 * time.Hour
+	}
+	if svc.maxOTPAttempts <= 0 {
+		svc.maxOTPAttempts = 5
+	}
+	return svc
 }
 
 func normalizeEmail(email string) string {
@@ -244,27 +267,45 @@ func (s *Service) shouldUseSecureCookie(r *http.Request) bool {
 }
 
 func (s *Service) SetSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+	secure := s.shouldUseSecureCookie(r)
+	sameSite := s.cookieSameSite
+	if sameSite == http.SameSiteNoneMode && !secure {
+		// Browsers reject SameSite=None cookies that are not Secure.
+		sameSite = http.SameSiteLaxMode
+	}
+	maxAge := int(time.Until(expiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.cookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     s.cookiePath,
+		Domain:   s.cookieDomain,
 		Expires:  expiresAt,
+		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   s.shouldUseSecureCookie(r),
-		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+		SameSite: sameSite,
 	})
 }
 
 func (s *Service) ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	secure := s.shouldUseSecureCookie(r)
+	sameSite := s.cookieSameSite
+	if sameSite == http.SameSiteNoneMode && !secure {
+		sameSite = http.SameSiteLaxMode
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.cookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     s.cookiePath,
+		Domain:   s.cookieDomain,
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   s.shouldUseSecureCookie(r),
-		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+		SameSite: sameSite,
 	})
 }
 
@@ -300,4 +341,39 @@ func (s *Service) HandleAppRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func envOr(key, def string) string {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	return v
+}
+
+func envIntOr(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func parseSameSiteEnv(raw string, def http.SameSite) http.SameSite {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "default":
+		return def
+	case "lax":
+		return http.SameSiteLaxMode
+	case "strict":
+		return http.SameSiteStrictMode
+	case "none":
+		return http.SameSiteNoneMode
+	default:
+		return def
+	}
 }

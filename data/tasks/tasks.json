@@ -2,69 +2,56 @@
   "users": {
     "usr_838f48afd4fb1a61": {
       "tasks": {
-        "task_7a1826705d579787": {
-          "id": "task_7a1826705d579787",
-          "title": "asdf",
-          "description": "asdf",
+        "task_27303dd4ebfbb105": {
+          "id": "task_27303dd4ebfbb105",
+          "title": "second",
+          "description": "second",
           "done": false,
-          "project": "asdf",
-          "modifiers": [
-            {
-              "defId": "mod.next_action"
-            },
-            {
-              "defId": "mod.recurring"
-            }
-          ],
+          "project": "inbox",
           "nextAction": false,
-          "assignedVillagerId": "stack_5",
-          "workedToday": true,
-          "processedCount": 5,
-          "createdAt": "2026-02-07T01:19:21.096097-05:00",
-          "updatedAt": "2026-02-07T01:25:11.106998-05:00"
+          "createdAt": "2026-02-07T07:11:05.384799-05:00",
+          "updatedAt": "2026-02-07T07:11:05.384799-05:00"
         },
-        "task_e578d4b97f445172": {
-          "id": "task_e578d4b97f445172",
-          "title": "sample",
-          "description": "sample",
+        "task_4937a5d179ba1015": {
+          "id": "task_4937a5d179ba1015",
+          "title": "third",
+          "description": "another",
+          "done": false,
+          "project": "home",
+          "nextAction": false,
+          "createdAt": "2026-02-07T07:12:56.763603-05:00",
+          "updatedAt": "2026-02-07T07:12:56.763603-05:00"
+        },
+        "task_6c958c6bd3ee8338": {
+          "id": "task_6c958c6bd3ee8338",
+          "title": "asdfa",
+          "description": "asdf",
           "done": true,
           "project": "inbox",
-          "dueDate": "2026-02-07",
-          "nextAction": false,
-          "recurrence": {
-            "type": "daily",
-            "interval": 2
-          },
-          "createdAt": "2026-02-07T01:26:01.287582-05:00",
-          "updatedAt": "2026-02-07T01:26:01.287582-05:00"
-        },
-        "task_ed498bf642dd2bb4": {
-          "id": "task_ed498bf642dd2bb4",
-          "title": "asdsss234",
-          "description": "ssss",
-          "done": false,
-          "project": "inbox",
           "modifiers": [
             {
               "defId": "mod.next_action"
             },
             {
               "defId": "mod.recurring"
+            },
+            {
+              "defId": "mod.next_action"
             }
           ],
-          "nextAction": true,
+          "nextAction": false,
           "recurrence": {
             "type": "weekly",
-            "interval": 2
+            "interval": 1
           },
-          "assignedVillagerId": "stack_9",
-          "createdAt": "2026-02-07T01:26:24.652189-05:00",
-          "updatedAt": "2026-02-07T01:27:24.711636-05:00"
+          "assignedVillagerId": "stack_6",
+          "createdAt": "2026-02-07T07:10:47.682776-05:00",
+          "updatedAt": "2026-02-07T07:18:25.802022-05:00"
         }
       },
       "liveIndex": {
-        "task_7a1826705d579787": true,
-        "task_ed498bf642dd2bb4": true
+        "task_27303dd4ebfbb105": true,
+        "task_4937a5d179ba1015": true
       }
     }
   }

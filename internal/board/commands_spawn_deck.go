@@ -231,7 +231,7 @@ func (h *Handler) cmdDeckOpenPack(state *model.BoardState, taskRepo task.Repo, p
 		if err != nil {
 			return nil, err
 		}
-		mapped, err := mapDeckEntryToCard(entry)
+		mapped, err := h.mapDeckEntryToCard(entry, rng)
 		if err != nil {
 			return nil, err
 		}
@@ -433,7 +433,7 @@ func pickWeightedDeckEntry(pool []config.DeckRNGEntry, rng *rand.Rand) (config.D
 	return config.DeckRNGEntry{}, fmt.Errorf("failed to draw deck entry")
 }
 
-func mapDeckEntryToCard(e config.DeckRNGEntry) (drawnCard, error) {
+func (h *Handler) mapDeckEntryToCard(e config.DeckRNGEntry, rng *rand.Rand) (drawnCard, error) {
 	switch e.CardType {
 	case "blank":
 		return drawnCard{defID: "task.blank", data: map[string]any{}}, nil
@@ -461,7 +461,14 @@ func mapDeckEntryToCard(e config.DeckRNGEntry) (drawnCard, error) {
 		if strings.TrimSpace(e.ResourceID) == "" {
 			return drawnCard{}, fmt.Errorf("resource entry missing resource_id")
 		}
-		return drawnCard{defID: model.CardDefID("resource." + e.ResourceID), data: map[string]any{}}, nil
+		data := map[string]any{}
+		if node := h.findResourceNode(strings.TrimSpace(e.ResourceID)); node != nil {
+			data["charges"] = randomResourceCharges(node, rng)
+			if node.Gather.BaseTimeS > 0 {
+				data["gatherTimeS"] = node.Gather.BaseTimeS
+			}
+		}
+		return drawnCard{defID: model.CardDefID("resource." + e.ResourceID), data: data}, nil
 	case "food":
 		if strings.TrimSpace(e.FoodID) == "" {
 			return drawnCard{}, fmt.Errorf("food entry missing food_id")
@@ -474,4 +481,28 @@ func mapDeckEntryToCard(e config.DeckRNGEntry) (drawnCard, error) {
 	default:
 		return drawnCard{}, fmt.Errorf("unsupported deck card_type: %s", e.CardType)
 	}
+}
+
+func randomResourceCharges(node *config.ResourceNode, rng *rand.Rand) int {
+	if node == nil {
+		return 1
+	}
+	min := node.Charges.Min
+	max := node.Charges.Max
+	if min <= 0 && max <= 0 {
+		return 1
+	}
+	if min <= 0 {
+		min = max
+	}
+	if max <= 0 {
+		max = min
+	}
+	if max < min {
+		max = min
+	}
+	if rng == nil || max == min {
+		return max
+	}
+	return min + rng.Intn((max-min)+1)
 }

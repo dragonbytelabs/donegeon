@@ -204,6 +204,14 @@ export function cmdZombieClear(zombieStackId: string, villagerStackId: string, t
   return sendCommand("zombie.clear", { zombieStackId, villagerStackId, targetStackId });
 }
 
+export function cmdResourceGather(resourceStackId: string, villagerStackId: string, targetStackId?: string) {
+  return sendCommand("resource.gather", { resourceStackId, villagerStackId, targetStackId });
+}
+
+export function cmdFoodConsume(foodStackId: string, villagerStackId: string, targetStackId?: string) {
+  return sendCommand("food.consume", { foodStackId, villagerStackId, targetStackId });
+}
+
 export function cmdWorldEndDay() {
   return sendCommand("world.end_day", {});
 }

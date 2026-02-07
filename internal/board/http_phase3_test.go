@@ -62,6 +62,53 @@ func TestCommand_TaskSetTitlePromotesBlankCardAndSyncsTask(t *testing.T) {
 	}
 }
 
+func TestCommand_TaskSetTitle_ReMarksTaskLive(t *testing.T) {
+	h, _ := newTestBoardHandler()
+	state := model.NewBoardState()
+
+	res, err := h.executeCommand(state, h.taskRepo, nil, "task.create_blank", map[string]any{
+		"x": float64(120),
+		"y": float64(220),
+	})
+	if err != nil {
+		t.Fatalf("task.create_blank: %v", err)
+	}
+	taskID, _ := res.(map[string]any)["taskId"].(model.TaskID)
+	if taskID == "" {
+		t.Fatalf("expected taskId from task.create_blank")
+	}
+	if err := h.taskRepo.SetLive(taskID, false); err != nil {
+		t.Fatalf("set live false: %v", err)
+	}
+
+	var taskCard *model.Card
+	for _, c := range state.Cards {
+		if c.DefID == "task.blank" {
+			taskCard = c
+			break
+		}
+	}
+	if taskCard == nil {
+		t.Fatalf("expected task.blank card")
+	}
+
+	if _, err := h.executeCommand(state, h.taskRepo, nil, "task.set_title", map[string]any{
+		"taskCardId": string(taskCard.ID),
+		"title":      "Back to live",
+	}); err != nil {
+		t.Fatalf("task.set_title: %v", err)
+	}
+
+	live := true
+	liveTasks, err := h.taskRepo.List(task.ListFilter{Live: &live})
+	if err != nil {
+		t.Fatalf("list live tasks: %v", err)
+	}
+	if len(liveTasks) != 1 || liveTasks[0].ID != taskID {
+		t.Fatalf("expected task to be marked live after board title update")
+	}
+}
+
 func TestCommand_TaskSpawnExistingConsumesCoinAndMarksLive(t *testing.T) {
 	playerRepo, err := player.NewFileRepo(t.TempDir())
 	if err != nil {
@@ -384,6 +431,58 @@ func TestCommand_TaskCompleteStack_RemovesTaskAndSingleUseButKeepsVillager(t *te
 	}
 	if len(liveTasks) != 0 {
 		t.Fatalf("expected completed task to be removed from live index")
+	}
+}
+
+func TestCommand_TaskCompleteByTaskID_RemovesBoardStackAndCompletesTask(t *testing.T) {
+	taskRepo := task.NewMemoryRepo()
+	cfg := testBoardConfig()
+	cfg.Tasks.Processing.CompletionRequiresAssignedVillager = true
+	h := NewHandler(NewMemoryRepo(), taskRepo, cfg)
+	state := model.NewBoardState()
+
+	inbox := "inbox"
+	created, err := taskRepo.Create(model.Task{
+		Title:   "Do laundry",
+		Project: &inbox,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := taskRepo.SetLive(created.ID, true); err != nil {
+		t.Fatalf("set live: %v", err)
+	}
+
+	villager := state.CreateCard("villager.basic", map[string]any{"name": "Pip"})
+	taskCard := state.CreateCard("task.instance", map[string]any{
+		"taskId": string(created.ID),
+		"title":  "Do laundry",
+	})
+	stack := state.CreateStack(model.Point{X: 300, Y: 300}, []model.CardID{villager.ID, taskCard.ID})
+
+	if _, err := h.executeCommand(state, taskRepo, nil, "task.complete_by_task_id", map[string]any{
+		"taskId": string(created.ID),
+	}); err != nil {
+		t.Fatalf("task.complete_by_task_id: %v", err)
+	}
+
+	if state.GetStack(stack.ID) != nil {
+		t.Fatalf("expected source task stack to be removed")
+	}
+	updatedTask, err := taskRepo.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get completed task: %v", err)
+	}
+	if !updatedTask.Done {
+		t.Fatalf("expected task to be marked done")
+	}
+	live := true
+	liveTasks, err := taskRepo.List(task.ListFilter{Live: &live})
+	if err != nil {
+		t.Fatalf("list live tasks: %v", err)
+	}
+	if len(liveTasks) != 0 {
+		t.Fatalf("expected task to be removed from live index")
 	}
 }
 

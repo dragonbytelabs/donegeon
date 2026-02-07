@@ -241,3 +241,126 @@ func TestCommand_ZombieClear_AppliesPerkCostReduction(t *testing.T) {
 		t.Fatalf("expected reduced clear cost (remaining stamina 5), got %d", stamina)
 	}
 }
+
+func TestCommand_ResourceGather_ConsumesChargeSpawnsProductsAndAwardsXP(t *testing.T) {
+	playerRepo, err := player.NewFileRepo(t.TempDir())
+	if err != nil {
+		t.Fatalf("new player repo: %v", err)
+	}
+	playerRepo = playerRepo.ForUser("u-phase5-gather")
+
+	cfg := testBoardConfig()
+	cfg.Villagers.Defaults.BaseMaxStamina = 6
+	cfg.Villagers.Actions.GatherStart = config.ActionCost{StaminaCost: 1}
+	cfg.Villagers.Leveling.Thresholds = map[int]int{1: 0, 2: 2}
+	cfg.Villagers.Leveling.XPSources.GatherResourceCycle.BaseXP = 2
+	cfg.Resources.Nodes = []config.ResourceNode{
+		{
+			ID: "scrap_pile",
+			Gather: config.ResourceGather{
+				Produces: config.ResourceProduces{
+					Type:   "loot",
+					ID:     "parts",
+					Amount: 1,
+				},
+				LootOnCycle: config.ResourceLootOnCycle{
+					RNGPool: []config.RNGPoolEntry{
+						{Type: "loot", ID: "gear", Amount: 1, Weight: 10},
+					},
+				},
+			},
+		},
+	}
+
+	h := NewHandler(NewMemoryRepo(), task.NewMemoryRepo(), cfg)
+	state := model.NewBoardState()
+
+	villager := state.CreateCard("villager.basic", map[string]any{"name": "Pip"})
+	villagerStack := state.CreateStack(model.Point{X: 100, Y: 100}, []model.CardID{villager.ID})
+	resource := state.CreateCard("resource.scrap_pile", map[string]any{"charges": 1})
+	resourceStack := state.CreateStack(model.Point{X: 240, Y: 100}, []model.CardID{resource.ID})
+
+	if _, err := h.executeCommand(state, nil, playerRepo, "resource.gather", map[string]any{
+		"resourceStackId": string(resourceStack.ID),
+		"villagerStackId": string(villagerStack.ID),
+		"targetStackId":   string(resourceStack.ID),
+	}); err != nil {
+		t.Fatalf("resource.gather: %v", err)
+	}
+
+	if state.GetStack(resourceStack.ID) != nil {
+		t.Fatalf("expected resource stack removed after last charge")
+	}
+	if got := playerRepo.GetState().VillagerStamina[string(villagerStack.ID)]; got != 5 {
+		t.Fatalf("expected villager stamina 5 after gather, got %d", got)
+	}
+	if progress := playerRepo.GetVillagerProgress(string(villagerStack.ID)); progress.XP != 2 {
+		t.Fatalf("expected villager XP 2 from gather, got %d", progress.XP)
+	}
+
+	partsFound := false
+	gearFound := false
+	for _, stack := range state.Stacks {
+		card := state.GetCard(stack.Cards[len(stack.Cards)-1])
+		if card == nil {
+			continue
+		}
+		switch card.DefID {
+		case "loot.parts":
+			partsFound = true
+		case "loot.gear":
+			gearFound = true
+		}
+	}
+	if !partsFound {
+		t.Fatalf("expected gather to spawn loot.parts")
+	}
+	if !gearFound {
+		t.Fatalf("expected gather bonus to spawn loot.gear")
+	}
+}
+
+func TestCommand_FoodConsume_RestoresStaminaAndConsumesFood(t *testing.T) {
+	playerRepo, err := player.NewFileRepo(t.TempDir())
+	if err != nil {
+		t.Fatalf("new player repo: %v", err)
+	}
+	playerRepo = playerRepo.ForUser("u-phase5-food")
+
+	cfg := testBoardConfig()
+	cfg.Villagers.Defaults.BaseMaxStamina = 6
+	cfg.Villagers.Actions.EatFood = config.ActionCost{StaminaCost: 0}
+	cfg.Food.Items = []config.FoodItem{
+		{
+			ID:             "berries",
+			StaminaRestore: 2,
+		},
+	}
+
+	h := NewHandler(NewMemoryRepo(), task.NewMemoryRepo(), cfg)
+	state := model.NewBoardState()
+
+	villager := state.CreateCard("villager.basic", map[string]any{"name": "Pip"})
+	villagerStack := state.CreateStack(model.Point{X: 100, Y: 100}, []model.CardID{villager.ID})
+	food := state.CreateCard("food.berries", map[string]any{"amount": 1})
+	foodStack := state.CreateStack(model.Point{X: 240, Y: 100}, []model.CardID{food.ID})
+
+	if ok, _, _, err := playerRepo.SpendVillagerStamina(string(villagerStack.ID), 3, 6); err != nil || !ok {
+		t.Fatalf("seed stamina spend failed: ok=%v err=%v", ok, err)
+	}
+
+	if _, err := h.executeCommand(state, nil, playerRepo, "food.consume", map[string]any{
+		"foodStackId":     string(foodStack.ID),
+		"villagerStackId": string(villagerStack.ID),
+		"targetStackId":   string(foodStack.ID),
+	}); err != nil {
+		t.Fatalf("food.consume: %v", err)
+	}
+
+	if got := playerRepo.GetState().VillagerStamina[string(villagerStack.ID)]; got != 5 {
+		t.Fatalf("expected villager stamina restored to 5, got %d", got)
+	}
+	if state.GetStack(foodStack.ID) != nil {
+		t.Fatalf("expected food stack removed after consume")
+	}
+}

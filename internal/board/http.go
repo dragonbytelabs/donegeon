@@ -289,10 +289,16 @@ func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, pl
 		return h.cmdTaskAssignVillager(state, taskRepo, args)
 	case "task.complete_stack":
 		return h.cmdTaskCompleteStack(state, taskRepo, playerRepo, args)
+	case "task.complete_by_task_id":
+		return h.cmdTaskCompleteByTaskID(state, taskRepo, playerRepo, args)
 	case "world.end_day":
 		return h.cmdWorldEndDay(state, taskRepo, playerRepo, args)
 	case "zombie.clear":
 		return h.cmdZombieClear(state, playerRepo, args)
+	case "resource.gather":
+		return h.cmdResourceGather(state, playerRepo, args)
+	case "food.consume":
+		return h.cmdFoodConsume(state, playerRepo, args)
 	case "loot.collect_stack":
 		return h.cmdLootCollectStack(state, taskRepo, playerRepo, args)
 	default:
@@ -622,6 +628,7 @@ func (h *Handler) cmdTaskSetTitle(state *model.BoardState, taskRepo task.Repo, a
 	if taskRepo != nil {
 		if taskIDStr, ok := card.Data["taskId"].(string); ok && taskIDStr != "" {
 			_, _ = taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Title: &title})
+			_ = taskRepo.SetLive(model.TaskID(taskIDStr), true)
 		}
 	}
 
@@ -656,6 +663,7 @@ func (h *Handler) cmdTaskSetDescription(state *model.BoardState, taskRepo task.R
 	if taskRepo != nil {
 		if taskIDStr, ok := card.Data["taskId"].(string); ok && taskIDStr != "" {
 			_, _ = taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Description: &description})
+			_ = taskRepo.SetLive(model.TaskID(taskIDStr), true)
 		}
 	}
 

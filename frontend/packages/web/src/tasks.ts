@@ -77,6 +77,21 @@ async function apiPatch(id: string, patch: Partial<Omit<TaskDTO, "id">>) {
   return (await res.json()) as TaskDTO;
 }
 
+async function apiCompleteOnBoard(taskId: string) {
+  const res = await fetch(`/api/board/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cmd: "task.complete_by_task_id",
+      args: { taskId },
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || `POST /api/board/cmd failed: ${res.status}`);
+  }
+}
+
 async function apiProcess(id: string, markDone = false) {
   const res = await fetch(`/api/tasks/${encodeURIComponent(id)}/process`, {
     method: "POST",
@@ -376,7 +391,11 @@ function render(tasks: TaskDTO[]) {
     done.addEventListener("click", (e) => e.stopPropagation());
     done.addEventListener("change", async () => {
       try {
-        await apiPatch(t.id, { done: done.checked });
+        if (done.checked && t.live) {
+          await apiCompleteOnBoard(t.id);
+        } else {
+          await apiPatch(t.id, { done: done.checked });
+        }
         await refresh();
       } catch (err: any) {
         alert(String(err?.message ?? err));
@@ -396,32 +415,6 @@ function render(tasks: TaskDTO[]) {
 
     const actionWrap = document.createElement("div");
     actionWrap.className = "flex items-center gap-2";
-
-    const processBtn = document.createElement("button");
-    processBtn.type = "button";
-    processBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed";
-    if (t.done) {
-      processBtn.textContent = "Done";
-      processBtn.disabled = true;
-    } else if (!t.assignedVillagerId) {
-      processBtn.textContent = "Needs Villager";
-      processBtn.disabled = true;
-    } else {
-      processBtn.textContent = `Process (${t.processedCount ?? 0})`;
-      processBtn.disabled = false;
-    }
-    processBtn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (processBtn.disabled) return;
-      try {
-        await apiProcess(t.id, false);
-        await refresh();
-      } catch (err: any) {
-        alert(String(err?.message ?? err));
-      }
-    });
-    actionWrap.appendChild(processBtn);
 
     const spawnBtn = document.createElement("button");
     spawnBtn.type = "button";

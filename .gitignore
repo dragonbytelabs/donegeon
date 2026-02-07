@@ -2,3 +2,6 @@
 tailwindcss
 frontend/.turbo/*
 templ.md
+main
+backups/
+data-restored/

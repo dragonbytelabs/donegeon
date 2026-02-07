@@ -110,6 +110,15 @@ func (v *Validator) ValidateStackMerge(
 	sourceKinds := v.getStackCardKinds(state, source)
 	hasTaskAcrossMerge := targetKinds["task"] || sourceKinds["task"]
 
+	// Allow stacking same-type modifier stacks directly (e.g. next_action + next_action).
+	if isPureModifierStack(targetKinds) && isPureModifierStack(sourceKinds) {
+		tDef, okT := singleModifierDefID(state, target)
+		sDef, okS := singleModifierDefID(state, source)
+		if okT && okS && tDef == sDef {
+			return nil
+		}
+	}
+
 	// Check disallowed pairs
 	for _, pair := range v.cfg.Rules.Stacking.Disallowed {
 		if len(pair) != 2 {
@@ -159,6 +168,34 @@ func (v *Validator) ValidateStackMerge(
 	}
 
 	return nil
+}
+
+func isPureModifierStack(kinds map[string]bool) bool {
+	return len(kinds) == 1 && kinds["modifier"]
+}
+
+func singleModifierDefID(state *model.BoardState, stack *model.Stack) (model.CardDefID, bool) {
+	var modDef model.CardDefID
+	for _, cardID := range stack.Cards {
+		card := state.GetCard(cardID)
+		if card == nil {
+			continue
+		}
+		if extractKind(card.DefID) != "modifier" {
+			return "", false
+		}
+		if modDef == "" {
+			modDef = card.DefID
+			continue
+		}
+		if modDef != card.DefID {
+			return "", false
+		}
+	}
+	if modDef == "" {
+		return "", false
+	}
+	return modDef, true
 }
 
 // getStackCardKinds returns all unique card kinds in a stack.

@@ -2,6 +2,7 @@ package board
 
 import (
 	"fmt"
+	"math/rand"
 	"sort"
 	"strings"
 	"time"
@@ -519,6 +520,7 @@ func (h *Handler) spawnOverdueZombies(state *model.BoardState, overdueTaskIDs []
 	spawnEnabled := true
 	perOverdueTask := 1
 	spawnCap := 0
+	spawnChance := 1.0
 	startX, startY, dx := 1500, 150, 150
 	zombieDefID := model.CardDefID("zombie.default_zombie")
 
@@ -529,6 +531,9 @@ func (h *Handler) spawnOverdueZombies(state *model.BoardState, overdueTaskIDs []
 		}
 		if v := h.cfg.World.DayTick.OverdueRules.ZombieSpawn.CapPerDay; v > 0 {
 			spawnCap = v
+		}
+		if v := h.cfg.World.DayTick.OverdueRules.ZombieSpawn.SpawnChance; v != nil {
+			spawnChance = *v
 		}
 		if v := h.cfg.World.DayTick.MaxZombiesSpawnPerDay; v > 0 && (spawnCap == 0 || v < spawnCap) {
 			spawnCap = v
@@ -551,6 +556,12 @@ func (h *Handler) spawnOverdueZombies(state *model.BoardState, overdueTaskIDs []
 	if !spawnEnabled {
 		return nil
 	}
+	if spawnChance < 0 {
+		spawnChance = 0
+	}
+	if spawnChance > 1 {
+		spawnChance = 1
+	}
 	if dx == 0 {
 		dx = 120
 	}
@@ -565,7 +576,11 @@ func (h *Handler) spawnOverdueZombies(state *model.BoardState, overdueTaskIDs []
 
 	existing := countZombieStacks(state)
 	spawned := make([]*model.Stack, 0, desired)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < desired; i++ {
+		if spawnChance < 1 && rng.Float64() > spawnChance {
+			continue
+		}
 		taskID := overdueTaskIDs[i%len(overdueTaskIDs)]
 		stack := h.createSingleCardStack(
 			state,

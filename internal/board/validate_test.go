@@ -65,3 +65,18 @@ func TestValidateStackMerge_AllowsModifierOntoTaskVillagerStack(t *testing.T) {
 		t.Fatalf("expected modifier merge to be allowed on task+villager stack, got error: %v", err)
 	}
 }
+
+func TestValidateStackMerge_AllowsSameModifierStacks(t *testing.T) {
+	v := NewValidator(testStackingConfig())
+	state := model.NewBoardState()
+
+	target := state.CreateCard("mod.next_action", nil)
+	source := state.CreateCard("mod.next_action", nil)
+
+	targetStack := state.CreateStack(model.Point{X: 100, Y: 100}, []model.CardID{target.ID})
+	sourceStack := state.CreateStack(model.Point{X: 130, Y: 100}, []model.CardID{source.ID})
+
+	if err := v.ValidateStackMerge(state, targetStack.ID, sourceStack.ID); err != nil {
+		t.Fatalf("expected same modifier stacks to merge, got error: %v", err)
+	}
+}

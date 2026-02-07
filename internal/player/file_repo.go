@@ -242,6 +242,47 @@ func (r *FileRepo) SpendVillagerStamina(villagerID string, cost, maxStamina int)
 	return true, cur, cloneUserState(us), nil
 }
 
+// RestoreVillagerStamina adds stamina to a villager up to maxStamina.
+func (r *FileRepo) RestoreVillagerStamina(villagerID string, amount, maxStamina int) (remaining int, state UserState, err error) {
+	villagerID = strings.TrimSpace(villagerID)
+	if villagerID == "" {
+		return 0, r.GetState(), nil
+	}
+	if maxStamina <= 0 {
+		maxStamina = 6
+	}
+	if amount <= 0 {
+		s := r.GetState()
+		cur, ok := s.VillagerStamina[villagerID]
+		if !ok {
+			cur = maxStamina
+		}
+		return cur, s, nil
+	}
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+
+	us := r.userStateLocked()
+	cur, ok := us.VillagerStamina[villagerID]
+	if !ok {
+		cur = maxStamina
+	}
+	cur += amount
+	if cur > maxStamina {
+		cur = maxStamina
+	}
+	if cur < 0 {
+		cur = 0
+	}
+	us.VillagerStamina[villagerID] = cur
+	r.store.s.Users[r.userID] = us
+	if err := r.store.saveLocked(); err != nil {
+		return 0, UserState{}, err
+	}
+	return cur, cloneUserState(us), nil
+}
+
 func (r *FileRepo) ResetVillagerStamina(villagerIDs []string, maxStamina int, mode string) (UserState, error) {
 	if maxStamina <= 0 {
 		maxStamina = 6

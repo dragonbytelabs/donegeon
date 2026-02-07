@@ -8,6 +8,7 @@ import { scheduleLiveSync } from "./liveSync";
 import { scheduleSave } from "./storage";
 import { applyBoardState, cmdBoardSeedDefault, cmdWorldEndDay, fetchBoardState, reloadBoard } from "./api";
 import { loadInventory, refreshInventory } from "./inventory";
+import { notify } from "./notify";
 
 // Get bottom deck row Y position based on viewport
 function getDeckRowY(): number {
@@ -56,7 +57,11 @@ function setupHeaderActions(engine: Engine) {
     void reloadBoard(engine)
       .then(() => refreshInventory())
       .then(() => {
+        notify("Board refreshed", "info", 1200);
         scheduleLiveSync(engine);
+      })
+      .catch((err) => {
+        notify(`Refresh failed: ${String((err as Error)?.message ?? err)}`, "error");
       })
       .finally(() => {
         setBusy(refreshBtn, false, "Refreshing...", "Refresh");
@@ -69,11 +74,13 @@ function setupHeaderActions(engine: Engine) {
       .then(() => reloadBoard(engine))
       .then(() => refreshInventory())
       .then(() => {
+        notify("Day ended. World tick applied.", "success", 1800);
         scheduleLiveSync(engine);
         window.dispatchEvent(new Event("donegeon:force-refresh-goals"));
       })
       .catch((err) => {
         console.warn("end day failed", err);
+        notify(`End day failed: ${String((err as Error)?.message ?? err)}`, "error");
       })
       .finally(() => {
         setBusy(endDayBtn, false, "Ending...", "End Day");
