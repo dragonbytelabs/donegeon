@@ -3,6 +3,7 @@ package player
 import (
 	"encoding/json"
 	"net/http"
+	"net/mail"
 	"strings"
 )
 
@@ -107,5 +108,130 @@ func (h *Handler) Unlock(w http.ResponseWriter, r *http.Request) {
 			Unlocks: state.Unlocks,
 			Costs:   defaultCosts(),
 		},
+	})
+}
+
+// GET /api/player/profile
+func (h *Handler) Profile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	repo := h.repoForRequest(r)
+	if repo == nil {
+		writeErr(w, http.StatusInternalServerError, "player repository unavailable")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"profile": repo.GetProfile(),
+	})
+}
+
+// POST /api/player/onboarding/complete
+func (h *Handler) CompleteOnboarding(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	repo := h.repoForRequest(r)
+	if repo == nil {
+		writeErr(w, http.StatusInternalServerError, "player repository unavailable")
+		return
+	}
+
+	var in struct {
+		DisplayName string `json:"displayName"`
+		Avatar      string `json:"avatar"`
+		TeamName    string `json:"teamName"`
+		TeamAvatar  string `json:"teamAvatar"`
+	}
+	if err := decodeJSON(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	profile, _, err := repo.CompleteOnboarding(in.DisplayName, in.Avatar, in.TeamName, in.TeamAvatar)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not complete onboarding")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"profile": profile,
+	})
+}
+
+// PATCH/POST /api/player/team
+func (h *Handler) Team(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch && r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	repo := h.repoForRequest(r)
+	if repo == nil {
+		writeErr(w, http.StatusInternalServerError, "player repository unavailable")
+		return
+	}
+
+	var in struct {
+		Name   string `json:"name"`
+		Avatar string `json:"avatar"`
+	}
+	if err := decodeJSON(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+
+	profile, _, err := repo.UpdateTeam(in.Name, in.Avatar)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not update team")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"profile": profile,
+	})
+}
+
+// POST /api/player/team/invite
+func (h *Handler) TeamInvite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	repo := h.repoForRequest(r)
+	if repo == nil {
+		writeErr(w, http.StatusInternalServerError, "player repository unavailable")
+		return
+	}
+
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := decodeJSON(r, &in); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(in.Email))
+	if email == "" {
+		writeErr(w, http.StatusBadRequest, `missing field "email"`)
+		return
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid invite email")
+		return
+	}
+
+	added, profile, _, err := repo.InviteTeamMember(email)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "could not invite member")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"added":   added,
+		"profile": profile,
 	})
 }

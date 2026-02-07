@@ -2,11 +2,13 @@ package player
 
 import (
 	"encoding/json"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type store struct {
@@ -89,10 +91,12 @@ func (r *FileRepo) userStateLocked() UserState {
 	us, ok := r.store.s.Users[r.userID]
 	if !ok {
 		us = defaultUserState()
+		us.Profile = normalizeProfile(us.Profile, r.userID)
 		r.store.s.Users[r.userID] = us
 		return us
 	}
 	us = normalizeUserState(us)
+	us.Profile = normalizeProfile(us.Profile, r.userID)
 	r.store.s.Users[r.userID] = us
 	return us
 }
@@ -125,6 +129,34 @@ func cloneMapVillagerProgress(src map[string]VillagerProgress) map[string]Villag
 	return out
 }
 
+func cloneTeamMembers(src []TeamMember) []TeamMember {
+	out := make([]TeamMember, 0, len(src))
+	for _, m := range src {
+		out = append(out, TeamMember{
+			Email:     m.Email,
+			Role:      m.Role,
+			Status:    m.Status,
+			InvitedAt: m.InvitedAt,
+		})
+	}
+	return out
+}
+
+func cloneProfile(src PlayerProfile) PlayerProfile {
+	return PlayerProfile{
+		DisplayName:           src.DisplayName,
+		Avatar:                src.Avatar,
+		OnboardingCompleted:   src.OnboardingCompleted,
+		OnboardingCompletedAt: src.OnboardingCompletedAt,
+		Team: TeamProfile{
+			ID:      src.Team.ID,
+			Name:    src.Team.Name,
+			Avatar:  src.Team.Avatar,
+			Members: cloneTeamMembers(src.Team.Members),
+		},
+	}
+}
+
 func cloneUserState(src UserState) UserState {
 	return UserState{
 		Loot:            cloneMapInt(src.Loot),
@@ -133,6 +165,7 @@ func cloneUserState(src UserState) UserState {
 		Villagers:       cloneMapVillagerProgress(src.Villagers),
 		Metrics:         cloneMapInt(src.Metrics),
 		DeckOpens:       cloneMapInt(src.DeckOpens),
+		Profile:         cloneProfile(src.Profile),
 	}
 }
 
@@ -564,6 +597,142 @@ func (r *FileRepo) BuildStateResponse() StateResponse {
 		Villagers:       us.Villagers,
 		Metrics:         us.Metrics,
 		DeckOpens:       us.DeckOpens,
+		Profile:         us.Profile,
 		Costs:           defaultCosts(),
 	}
+}
+
+func (r *FileRepo) NeedsOnboarding() bool {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	us := r.userStateLocked()
+	return !us.Profile.OnboardingCompleted
+}
+
+func (r *FileRepo) GetProfile() PlayerProfile {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	us := r.userStateLocked()
+	return cloneProfile(us.Profile)
+}
+
+func normalizeDisplayName(name string) string {
+	name = strings.TrimSpace(name)
+	if len(name) > 80 {
+		name = name[:80]
+	}
+	return name
+}
+
+func normalizeAvatar(avatar string) string {
+	avatar = strings.TrimSpace(avatar)
+	if len(avatar) > 8 {
+		avatar = avatar[:8]
+	}
+	return avatar
+}
+
+func normalizeTeamName(name string) string {
+	name = strings.TrimSpace(name)
+	if len(name) > 120 {
+		name = name[:120]
+	}
+	return name
+}
+
+func (r *FileRepo) CompleteOnboarding(displayName, avatar, teamName, teamAvatar string) (PlayerProfile, UserState, error) {
+	displayName = normalizeDisplayName(displayName)
+	avatar = normalizeAvatar(avatar)
+	teamName = normalizeTeamName(teamName)
+	teamAvatar = normalizeAvatar(teamAvatar)
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+
+	us := r.userStateLocked()
+	profile := us.Profile
+	if displayName != "" {
+		profile.DisplayName = displayName
+	}
+	if avatar != "" {
+		profile.Avatar = avatar
+	}
+	if teamName != "" {
+		profile.Team.Name = teamName
+	} else if profile.Team.Name == "" {
+		if profile.DisplayName != "" {
+			profile.Team.Name = profile.DisplayName + "'s Team"
+		} else {
+			profile.Team.Name = "My Team"
+		}
+	}
+	if teamAvatar != "" {
+		profile.Team.Avatar = teamAvatar
+	}
+	profile.Team = normalizeProfile(profile, r.userID).Team
+	profile.OnboardingCompleted = true
+	profile.OnboardingCompletedAt = time.Now().UTC()
+	us.Profile = normalizeProfile(profile, r.userID)
+
+	r.store.s.Users[r.userID] = us
+	if err := r.store.saveLocked(); err != nil {
+		return PlayerProfile{}, UserState{}, err
+	}
+	return cloneProfile(us.Profile), cloneUserState(us), nil
+}
+
+func (r *FileRepo) UpdateTeam(teamName, teamAvatar string) (PlayerProfile, UserState, error) {
+	teamName = normalizeTeamName(teamName)
+	teamAvatar = normalizeAvatar(teamAvatar)
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	us := r.userStateLocked()
+	if teamName != "" {
+		us.Profile.Team.Name = teamName
+	}
+	if teamAvatar != "" {
+		us.Profile.Team.Avatar = teamAvatar
+	}
+	us.Profile = normalizeProfile(us.Profile, r.userID)
+	r.store.s.Users[r.userID] = us
+	if err := r.store.saveLocked(); err != nil {
+		return PlayerProfile{}, UserState{}, err
+	}
+	return cloneProfile(us.Profile), cloneUserState(us), nil
+}
+
+func (r *FileRepo) InviteTeamMember(email string) (bool, PlayerProfile, UserState, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		s := r.GetState()
+		return false, s.Profile, s, nil
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		s := r.GetState()
+		return false, s.Profile, s, nil
+	}
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	us := r.userStateLocked()
+
+	for _, m := range us.Profile.Team.Members {
+		if strings.EqualFold(strings.TrimSpace(m.Email), email) {
+			return false, cloneProfile(us.Profile), cloneUserState(us), nil
+		}
+	}
+
+	us.Profile.Team.Members = append(us.Profile.Team.Members, TeamMember{
+		Email:     email,
+		Role:      "member",
+		Status:    "invited",
+		InvitedAt: time.Now().UTC(),
+	})
+	us.Profile = normalizeProfile(us.Profile, r.userID)
+	r.store.s.Users[r.userID] = us
+	if err := r.store.saveLocked(); err != nil {
+		return false, PlayerProfile{}, UserState{}, err
+	}
+	return true, cloneProfile(us.Profile), cloneUserState(us), nil
 }

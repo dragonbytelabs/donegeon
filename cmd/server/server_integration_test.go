@@ -32,6 +32,13 @@ func TestServer_ProtectedRoutesRequireAuth(t *testing.T) {
 	if loc := pageRes.Header().Get("Location"); loc != "/login" {
 		t.Fatalf("expected redirect to /login, got %q", loc)
 	}
+	onboardingRes := app.request(http.MethodGet, "/onboarding", nil, "")
+	if onboardingRes.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 for /onboarding, got %d", onboardingRes.Code)
+	}
+	if loc := onboardingRes.Header().Get("Location"); loc != "/login" {
+		t.Fatalf("expected /onboarding redirect to /login, got %q", loc)
+	}
 }
 
 func TestServer_OTPFlowAndEmbeddedStatic(t *testing.T) {
@@ -68,9 +75,46 @@ func TestServer_OTPFlowAndEmbeddedStatic(t *testing.T) {
 		t.Fatalf("plugin marketplace expected 200, got %d body=%s", pluginRes.Code, pluginRes.Body.String())
 	}
 
+	appRes := app.request(http.MethodGet, "/app", nil, "")
+	if appRes.Code != http.StatusSeeOther {
+		t.Fatalf("app route expected 303, got %d", appRes.Code)
+	}
+	if loc := appRes.Header().Get("Location"); loc != "/onboarding" {
+		t.Fatalf("app route expected redirect to /onboarding, got %q", loc)
+	}
+
 	pageRes := app.request(http.MethodGet, "/tasks", nil, "")
+	if pageRes.Code != http.StatusSeeOther {
+		t.Fatalf("tasks page expected 303 before onboarding, got %d", pageRes.Code)
+	}
+	if loc := pageRes.Header().Get("Location"); loc != "/onboarding" {
+		t.Fatalf("tasks page expected redirect to /onboarding, got %q", loc)
+	}
+
+	onboardingRes := app.request(http.MethodGet, "/onboarding", nil, "")
+	if onboardingRes.Code != http.StatusOK {
+		t.Fatalf("onboarding page expected 200, got %d", onboardingRes.Code)
+	}
+
+	completeRes := app.json(http.MethodPost, "/api/player/onboarding/complete", map[string]any{
+		"displayName": "Integration User",
+		"teamName":    "Integration Team",
+	})
+	if completeRes.Code != http.StatusOK {
+		t.Fatalf("onboarding complete expected 200, got %d body=%s", completeRes.Code, completeRes.Body.String())
+	}
+
+	appRes = app.request(http.MethodGet, "/app", nil, "")
+	if appRes.Code != http.StatusSeeOther {
+		t.Fatalf("app route expected 303 after onboarding, got %d", appRes.Code)
+	}
+	if loc := appRes.Header().Get("Location"); loc != "/tasks" {
+		t.Fatalf("app route expected redirect to /tasks after onboarding, got %q", loc)
+	}
+
+	pageRes = app.request(http.MethodGet, "/tasks", nil, "")
 	if pageRes.Code != http.StatusOK {
-		t.Fatalf("tasks page expected 200, got %d", pageRes.Code)
+		t.Fatalf("tasks page expected 200 after onboarding, got %d", pageRes.Code)
 	}
 	builderRes := app.request(http.MethodGet, "/builder", nil, "")
 	if builderRes.Code != http.StatusFound {

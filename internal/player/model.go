@@ -1,5 +1,7 @@
 package player
 
+import "time"
+
 const (
 	LootCoin           = "coin"
 	LootPaper          = "paper"
@@ -41,6 +43,7 @@ type UserState struct {
 	Villagers       map[string]VillagerProgress `json:"villagers,omitempty"`
 	Metrics         map[string]int              `json:"metrics,omitempty"`
 	DeckOpens       map[string]int              `json:"deckOpens,omitempty"`
+	Profile         PlayerProfile               `json:"profile"`
 }
 
 type fileState struct {
@@ -53,6 +56,28 @@ type VillagerProgress struct {
 	Perks []string `json:"perks,omitempty"`
 }
 
+type TeamMember struct {
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	Status    string    `json:"status"`
+	InvitedAt time.Time `json:"invitedAt,omitempty"`
+}
+
+type TeamProfile struct {
+	ID      string       `json:"id"`
+	Name    string       `json:"name"`
+	Avatar  string       `json:"avatar,omitempty"`
+	Members []TeamMember `json:"members,omitempty"`
+}
+
+type PlayerProfile struct {
+	DisplayName           string      `json:"displayName,omitempty"`
+	Avatar                string      `json:"avatar,omitempty"`
+	OnboardingCompleted   bool        `json:"onboardingCompleted"`
+	OnboardingCompletedAt time.Time   `json:"onboardingCompletedAt,omitempty"`
+	Team                  TeamProfile `json:"team"`
+}
+
 type StateResponse struct {
 	Loot            map[string]int              `json:"loot"`
 	Unlocks         map[string]bool             `json:"unlocks"`
@@ -60,6 +85,7 @@ type StateResponse struct {
 	Villagers       map[string]VillagerProgress `json:"villagers,omitempty"`
 	Metrics         map[string]int              `json:"metrics,omitempty"`
 	DeckOpens       map[string]int              `json:"deckOpens,omitempty"`
+	Profile         PlayerProfile               `json:"profile"`
 	Costs           CostResponse                `json:"costs"`
 }
 
@@ -92,6 +118,14 @@ func defaultUserState() UserState {
 			MetricZombiesCleared: 0,
 		},
 		DeckOpens: map[string]int{},
+		Profile: PlayerProfile{
+			OnboardingCompleted: false,
+			Team: TeamProfile{
+				ID:      "",
+				Name:    "My Team",
+				Members: []TeamMember{},
+			},
+		},
 	}
 }
 
@@ -122,6 +156,38 @@ func normalizeUserState(s UserState) UserState {
 	for k, v := range s.DeckOpens {
 		out.DeckOpens[k] = v
 	}
+	out.Profile = normalizeProfile(s.Profile, "default")
+	return out
+}
+
+func normalizeProfile(in PlayerProfile, userID string) PlayerProfile {
+	out := in
+	if out.Team.ID == "" || out.Team.ID == "team_default" {
+		if userID == "" {
+			userID = "default"
+		}
+		out.Team.ID = "team_" + userID
+	}
+	if out.Team.Name == "" {
+		out.Team.Name = "My Team"
+	}
+	if out.Team.Members == nil {
+		out.Team.Members = []TeamMember{}
+	}
+	members := make([]TeamMember, 0, len(out.Team.Members))
+	for _, m := range out.Team.Members {
+		if m.Email == "" {
+			continue
+		}
+		if m.Role == "" {
+			m.Role = "member"
+		}
+		if m.Status == "" {
+			m.Status = "invited"
+		}
+		members = append(members, m)
+	}
+	out.Team.Members = members
 	return out
 }
 

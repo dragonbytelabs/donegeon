@@ -444,6 +444,37 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// /api/tasks/{id}/calendar.ics
+	if len(parts) == 2 && parts[1] == "calendar.ics" {
+		switch r.Method {
+		case http.MethodGet:
+			t, err := repo.Get(model.TaskID(id))
+			if err == ErrNotFound {
+				writeErr(w, 404, "not found")
+				return
+			}
+			if err != nil {
+				writeErr(w, 500, err.Error())
+				return
+			}
+
+			ics, err := BuildTaskCalendarICS(t, time.Now())
+			if err != nil {
+				writeErr(w, 400, err.Error())
+				return
+			}
+
+			w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="task-%s.ics"`, id))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(ics))
+			return
+		default:
+			writeErr(w, 405, "method not allowed")
+			return
+		}
+	}
+
 	// /api/tasks/{id}/live
 	if len(parts) == 2 && parts[1] == "live" {
 		switch r.Method {

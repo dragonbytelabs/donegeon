@@ -70,11 +70,28 @@ function setupHeaderActions(engine: Engine) {
 
   endDayBtn?.addEventListener("click", () => {
     setBusy(endDayBtn, true, "Ending...", "End Day");
+    let tickPatch: any = null;
     void cmdWorldEndDay()
-      .then(() => reloadBoard(engine))
+      .then((res) => {
+        tickPatch = res.patch ?? null;
+        return reloadBoard(engine);
+      })
       .then(() => refreshInventory())
       .then(() => {
-        notify("Day ended. World tick applied.", "success", 1800);
+        const spawned = Number(tickPatch?.spawnedZombieCount ?? 0);
+        const overdue = Number(tickPatch?.overdueTaskCount ?? 0);
+        const respawned = Array.isArray(tickPatch?.recurrenceRespawnedTaskIds)
+          ? tickPatch.recurrenceRespawnedTaskIds.length
+          : 0;
+
+        if (spawned > 0) {
+          notify(`Nightfall: ${spawned} zombie${spawned === 1 ? "" : "s"} spawned from ${overdue} overdue task${overdue === 1 ? "" : "s"}.`, "error", 2600);
+        } else {
+          notify("Day ended. No zombies spawned.", "success", 1800);
+        }
+        if (respawned > 0) {
+          notify(`${respawned} recurring task${respawned === 1 ? "" : "s"} moved back to pending.`, "info", 1800);
+        }
         scheduleLiveSync(engine);
         window.dispatchEvent(new Event("donegeon:force-refresh-goals"));
       })

@@ -23,6 +23,7 @@ export default defineConfig({
         board: "src/board/index.ts",
         tasks: "src/tasks.ts",
         login: "src/login.ts",
+        onboarding: "src/onboarding.ts",
       },
       output: {
         entryFileNames: "[name].js",

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"donegeon/internal/config"
@@ -453,4 +454,73 @@ func TestTasksSub_PatchLockedFieldsAllowedWithAttachedModifier(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 		}
 	})
+}
+
+func TestTasksSub_CalendarExportICS(t *testing.T) {
+	h, repo, _ := newTaskHandlerForTests(t, false)
+	inbox := "inbox"
+	due := "2026-02-12"
+	created, err := repo.Create(model.Task{
+		Title:       "Take out trash",
+		Description: "Thursday night run",
+		Project:     &inbox,
+		DueDate:     &due,
+		Recurrence: &model.Recurrence{
+			Type:     "weekly",
+			Interval: 2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks/"+string(created.ID)+"/calendar.ics", nil)
+	h.TasksSub(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/calendar") {
+		t.Fatalf("expected text/calendar content type, got %q", ct)
+	}
+
+	body := rec.Body.String()
+	for _, want := range []string{
+		"BEGIN:VCALENDAR",
+		"BEGIN:VEVENT",
+		"SUMMARY:Take out trash",
+		"DESCRIPTION:Thursday night run",
+		"DTSTART;VALUE=DATE:20260212",
+		"RRULE:FREQ=WEEKLY;INTERVAL=2",
+		"END:VEVENT",
+		"END:VCALENDAR",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected calendar export to contain %q; body=%s", want, body)
+		}
+	}
+}
+
+func TestTasksSub_CalendarExportRequiresDueDate(t *testing.T) {
+	h, repo, _ := newTaskHandlerForTests(t, false)
+	inbox := "inbox"
+	created, err := repo.Create(model.Task{
+		Title:   "No due",
+		Project: &inbox,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/tasks/"+string(created.ID)+"/calendar.ics", nil)
+	h.TasksSub(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing due date, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "task due date required") {
+		t.Fatalf("expected due-date-required error, got body=%s", rec.Body.String())
+	}
 }

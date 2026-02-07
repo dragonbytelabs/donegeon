@@ -118,6 +118,22 @@ async function apiPatchTask(id: string, patch: Partial<Omit<TaskDTO, "id">>): Pr
   return res.json();
 }
 
+function openTaskCalendarExport(taskId: string): void {
+  const url = `/api/tasks/${encodeURIComponent(taskId)}/calendar.ics`;
+  window.open(url, "_blank", "noopener");
+}
+
+function updateCalendarButtonState(r: ModalRefs, taskID?: string): void {
+  const hasDueDate = !r.dueSection.classList.contains("hidden") && r.dueDate.value.trim() !== "";
+  const ready = !!taskID && hasDueDate;
+  r.btnCalendar.disabled = !ready;
+  r.btnCalendar.classList.toggle("opacity-50", !ready);
+  r.btnCalendar.classList.toggle("cursor-not-allowed", !ready);
+  r.btnCalendar.title = ready
+    ? "Export this task as an .ics calendar event"
+    : "Set a due date and save first to export this task to calendar.";
+}
+
 function parseLockedFeature(message: string): string | null {
   const prefix = "feature locked:";
   const idx = message.indexOf(prefix);
@@ -270,8 +286,15 @@ function ensureModalMounted() {
     recInv: q(panel, "[data-recinv]"),
 
     btnClose: q(panel, "[data-taskmodal-close]"),
+    btnCalendar: document.createElement("button"),
     btnSave: q(panel, "[data-save]"),
   };
+
+  refs.btnCalendar.type = "button";
+  refs.btnCalendar.className =
+    "rounded-lg border border-border bg-transparent px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed";
+  refs.btnCalendar.textContent = "Calendar (.ics)";
+  refs.btnSave.parentElement?.insertBefore(refs.btnCalendar, refs.btnSave);
 
   function close() {
     if (!refs) return;
@@ -284,6 +307,22 @@ function ensureModalMounted() {
     if (e.target === refs!.overlay) close();
   });
   refs.btnClose.addEventListener("click", close);
+  refs.btnCalendar.addEventListener("click", () => {
+    if (!refs || !ctx) return;
+    if (!ctx.existingTaskId) {
+      refs.err.textContent = "Save this task first before exporting to calendar.";
+      return;
+    }
+    if (refs.dueDate.value.trim() === "") {
+      refs.err.textContent = "Set a due date before exporting to calendar.";
+      return;
+    }
+    openTaskCalendarExport(ctx.existingTaskId);
+  });
+  refs.dueDate.addEventListener("input", () => {
+    if (!refs) return;
+    updateCalendarButtonState(refs, ctx?.existingTaskId);
+  });
 
   refs.btnSave.addEventListener("click", async () => {
     if (!refs || !ctx) return;
@@ -379,6 +418,8 @@ function ensureModalMounted() {
         });
       }
 
+      updateCalendarButtonState(refs, ctx.existingTaskId);
+
       await cmdTaskSetTaskID(ctx.cardId, saved.id);
 
       if (saved.done) {
@@ -460,6 +501,7 @@ export async function openTaskModal(opts: { engine: Engine; stackId: string; car
   }
 
   r.err.textContent = "";
+  updateCalendarButtonState(r, existingTaskId);
 
   // show modal
   r.overlay.classList.remove("hidden");

@@ -73,6 +73,26 @@ type PlayerStateDTO = {
   };
 };
 
+type TeamMemberDTO = {
+  email: string;
+  role: string;
+  status: string;
+  invitedAt?: string;
+};
+
+type PlayerProfileDTO = {
+  displayName?: string;
+  avatar?: string;
+  onboardingCompleted: boolean;
+  onboardingCompletedAt?: string;
+  team: {
+    id: string;
+    name: string;
+    avatar?: string;
+    members?: TeamMemberDTO[];
+  };
+};
+
 const FEATURE_DUE_DATE = "task.due_date";
 const FEATURE_NEXT_ACTION = "task.next_action";
 const FEATURE_RECURRENCE = "task.recurrence";
@@ -158,6 +178,13 @@ async function apiPlayerState() {
   const res = await fetch(`/api/player/state`);
   if (!res.ok) throw new Error(`GET /api/player/state failed: ${res.status}`);
   return (await res.json()) as PlayerStateDTO;
+}
+
+async function apiPlayerProfile() {
+  const res = await fetch(`/api/player/profile`);
+  if (!res.ok) throw new Error(`GET /api/player/profile failed: ${res.status}`);
+  const data = (await res.json()) as { profile: PlayerProfileDTO };
+  return data.profile;
 }
 
 async function apiBlueprintList() {
@@ -282,6 +309,32 @@ async function apiUnlockFeature(feature: string) {
   return data.state as PlayerStateDTO;
 }
 
+async function apiTeamUpdate(name: string, avatar: string) {
+  const res = await fetch(`/api/player/team`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, avatar }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || `PATCH /api/player/team failed: ${res.status}`);
+  }
+  return data.profile as PlayerProfileDTO;
+}
+
+async function apiTeamInvite(email: string) {
+  const res = await fetch(`/api/player/team/invite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || `POST /api/player/team/invite failed: ${res.status}`);
+  }
+  return data.profile as PlayerProfileDTO;
+}
+
 async function apiSpawnTaskToBoard(taskId: string, x: number, y: number) {
   const res = await fetch(`/api/board/cmd`, {
     method: "POST",
@@ -295,6 +348,11 @@ async function apiSpawnTaskToBoard(taskId: string, x: number, y: number) {
   if (!res.ok || !data?.ok) {
     throw new Error(data?.error || `POST /api/board/cmd failed: ${res.status}`);
   }
+}
+
+function openTaskCalendarExport(taskId: string): void {
+  const url = `/api/tasks/${encodeURIComponent(taskId)}/calendar.ics`;
+  window.open(url, "_blank", "noopener");
 }
 
 // ---------- UI state ----------
@@ -365,10 +423,23 @@ type PluginUIRefs = {
   err: HTMLDivElement;
 };
 
+type TeamUIRefs = {
+  root: HTMLDivElement;
+  name: HTMLInputElement;
+  avatar: HTMLInputElement;
+  invite: HTMLInputElement;
+  saveBtn: HTMLButtonElement;
+  inviteBtn: HTMLButtonElement;
+  members: HTMLDivElement;
+  err: HTMLDivElement;
+};
+
 let blueprintUI: BlueprintUIRefs | null = null;
 let blueprints: BlueprintDTO[] = [];
 let pluginUI: PluginUIRefs | null = null;
 let pluginState: PluginMarketplaceStateDTO = { marketplace: [], installed: [] };
+let teamUI: TeamUIRefs | null = null;
+let playerProfile: PlayerProfileDTO | null = null;
 
 let unlockButtons:
   | {
@@ -567,6 +638,81 @@ function renderBlueprintList() {
 async function refreshBlueprints() {
   blueprints = await apiBlueprintList();
   renderBlueprintList();
+}
+
+function ensureTeamUI(): TeamUIRefs {
+  if (teamUI) return teamUI;
+  const page = document.querySelector(".mx-auto.max-w-5xl") as HTMLDivElement | null;
+  if (!page) throw new Error("Missing tasks page root");
+
+  const root = document.createElement("div");
+  root.id = "team";
+  root.className = "mt-6 rounded-lg border border-border bg-card p-4";
+  root.innerHTML = `
+    <div class="mb-3">
+      <div class="text-sm font-semibold">Team HQ</div>
+      <div class="text-xs opacity-70">Rename your team, set avatar, and invite collaborators.</div>
+    </div>
+    <div class="grid gap-2 md:grid-cols-2">
+      <div>
+        <label class="text-xs opacity-70">Team name</label>
+        <input data-team-name class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="My Team" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Team avatar</label>
+        <input data-team-avatar class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="🏰" />
+      </div>
+    </div>
+    <div class="mt-2 flex items-end gap-2">
+      <div class="flex-1">
+        <label class="text-xs opacity-70">Invite teammate</label>
+        <input data-team-invite class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="ally@example.com" />
+      </div>
+      <button data-team-invite-btn type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">Invite</button>
+      <button data-team-save type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">Save Team</button>
+    </div>
+    <div data-team-err class="mt-2 text-xs text-red-300"></div>
+    <div data-team-members class="mt-3 space-y-1 text-xs opacity-75"></div>
+  `;
+  page.appendChild(root);
+
+  teamUI = {
+    root,
+    name: q<HTMLInputElement>(root, "[data-team-name]"),
+    avatar: q<HTMLInputElement>(root, "[data-team-avatar]"),
+    invite: q<HTMLInputElement>(root, "[data-team-invite]"),
+    saveBtn: q<HTMLButtonElement>(root, "[data-team-save]"),
+    inviteBtn: q<HTMLButtonElement>(root, "[data-team-invite-btn]"),
+    members: q<HTMLDivElement>(root, "[data-team-members]"),
+    err: q<HTMLDivElement>(root, "[data-team-err]"),
+  };
+  return teamUI;
+}
+
+function renderTeamPanel() {
+  const ui = ensureTeamUI();
+  const profile = playerProfile;
+  if (!profile) {
+    ui.members.innerHTML = `<div class="text-xs opacity-70">Loading team...</div>`;
+    return;
+  }
+  ui.name.value = profile.team?.name ?? "";
+  ui.avatar.value = profile.team?.avatar ?? "";
+
+  const members = profile.team?.members ?? [];
+  ui.members.innerHTML = "";
+  if (members.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "opacity-70";
+    empty.textContent = "No invites yet.";
+    ui.members.appendChild(empty);
+    return;
+  }
+  members.forEach((m) => {
+    const row = document.createElement("div");
+    row.textContent = `${m.email} • ${m.status}`;
+    ui.members.appendChild(row);
+  });
 }
 
 function ensurePluginUI(): PluginUIRefs {
@@ -967,6 +1113,25 @@ function render(tasks: TaskDTO[]) {
     const actionWrap = document.createElement("div");
     actionWrap.className = "flex items-center gap-2";
 
+    const calendarBtn = document.createElement("button");
+    calendarBtn.type = "button";
+    calendarBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed";
+    if (t.dueDate && t.dueDate.trim() !== "") {
+      calendarBtn.textContent = "Calendar";
+      calendarBtn.disabled = false;
+      calendarBtn.title = "Export this task as an .ics calendar event";
+      calendarBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openTaskCalendarExport(t.id);
+      });
+    } else {
+      calendarBtn.textContent = "No Date";
+      calendarBtn.disabled = true;
+      calendarBtn.title = "Set a due date to export this task to calendar.";
+    }
+    actionWrap.appendChild(calendarBtn);
+
     const spawnBtn = document.createElement("button");
     spawnBtn.type = "button";
     spawnBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed";
@@ -1009,7 +1174,7 @@ function render(tasks: TaskDTO[]) {
 }
 
 async function refresh() {
-  const [tasks, state, bp, plugins] = await Promise.all([
+  const [tasks, state, bp, plugins, profile] = await Promise.all([
     apiList({
       status: statusSel.value,
       project: projectSel.value,
@@ -1018,23 +1183,26 @@ async function refresh() {
     apiPlayerState(),
     apiBlueprintList(),
     apiPluginMarketplace(),
+    apiPlayerProfile(),
   ]);
   playerState = state;
   blueprints = bp;
   pluginState = plugins;
+  playerProfile = profile;
   renderPlayerState();
   const open = !overlay.classList.contains("hidden");
   if (open) applyEditorGates();
   render(tasks);
   renderBlueprintList();
   renderPluginList();
+  renderTeamPanel();
 }
 
 async function initialLoad() {
   if (!playerState) {
     await loadPlayerState();
   }
-  const [tasks, bp, plugins] = await Promise.all([
+  const [tasks, bp, plugins, profile] = await Promise.all([
     apiList({
       status: statusSel.value,
       project: projectSel.value,
@@ -1042,12 +1210,15 @@ async function initialLoad() {
     }),
     apiBlueprintList(),
     apiPluginMarketplace(),
+    apiPlayerProfile(),
   ]);
   blueprints = bp;
   pluginState = plugins;
+  playerProfile = profile;
   render(tasks);
   renderBlueprintList();
   renderPluginList();
+  renderTeamPanel();
 }
 
 // ---------- wire up ----------
@@ -1068,6 +1239,7 @@ function initOnce() {
 
   const bpUI = ensureBlueprintUI();
   const plUI = ensurePluginUI();
+  const tmUI = ensureTeamUI();
   if (window.location.hash === "#blueprints") {
     window.setTimeout(() => {
       bpUI.root.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1075,6 +1247,10 @@ function initOnce() {
   } else if (window.location.hash === "#plugins") {
     window.setTimeout(() => {
       plUI.root.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  } else if (window.location.hash === "#team") {
+    window.setTimeout(() => {
+      tmUI.root.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
   }
 
@@ -1198,6 +1374,30 @@ function initOnce() {
       plUI.capabilities.value = "";
     } catch (err: any) {
       plUI.err.textContent = String(err?.message ?? err);
+    }
+  });
+  on(tmUI.saveBtn, "click", async () => {
+    tmUI.err.textContent = "";
+    try {
+      playerProfile = await apiTeamUpdate(tmUI.name.value.trim(), tmUI.avatar.value.trim());
+      renderTeamPanel();
+    } catch (err: any) {
+      tmUI.err.textContent = String(err?.message ?? err);
+    }
+  });
+  on(tmUI.inviteBtn, "click", async () => {
+    tmUI.err.textContent = "";
+    const email = tmUI.invite.value.trim();
+    if (!email) {
+      tmUI.err.textContent = "Invite email is required.";
+      return;
+    }
+    try {
+      playerProfile = await apiTeamInvite(email);
+      tmUI.invite.value = "";
+      renderTeamPanel();
+    } catch (err: any) {
+      tmUI.err.textContent = String(err?.message ?? err);
     }
   });
   on(refreshBtn, "click", () => {

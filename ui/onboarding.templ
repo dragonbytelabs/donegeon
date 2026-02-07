@@ -1,0 +1,54 @@
+package ui
+
+templ Onboarding() {
+	<div class="flex h-full w-full items-center justify-center overflow-y-auto bg-background px-4 py-6">
+		<div class="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-sm">
+			<div class="mb-4">
+				<h1 class="text-xl font-semibold">Welcome To Donegeon</h1>
+				<p class="mt-1 text-sm text-muted-foreground">
+					Set up your profile and team before entering the board.
+				</p>
+			</div>
+
+			<form id="onboardingForm" class="space-y-4">
+				<div class="grid gap-3 md:grid-cols-2">
+					<div>
+						<label class="block text-sm font-medium" for="profileDisplayName">Display name</label>
+						<input id="profileDisplayName" type="text" placeholder="Game Master" class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/>
+					</div>
+					<div>
+						<label class="block text-sm font-medium" for="profileAvatar">Avatar</label>
+						<input id="profileAvatar" type="text" placeholder="🧙" maxlength="8" class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/>
+					</div>
+				</div>
+
+				<div class="grid gap-3 md:grid-cols-2">
+					<div>
+						<label class="block text-sm font-medium" for="teamName">Team name</label>
+						<input id="teamName" type="text" placeholder="GM's Team" class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/>
+					</div>
+					<div>
+						<label class="block text-sm font-medium" for="teamAvatar">Team avatar</label>
+						<input id="teamAvatar" type="text" placeholder="🏰" maxlength="8" class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"/>
+					</div>
+				</div>
+
+				<div>
+					<label class="block text-sm font-medium" for="teamInvites">Invite teammates (comma or newline separated emails)</label>
+					<textarea id="teamInvites" rows="4" placeholder="alice@example.com, bob@example.com" class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"></textarea>
+				</div>
+
+				<div class="flex flex-wrap items-center gap-2">
+					<button id="onboardingSave" type="submit" class="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">
+						Finish Setup
+					</button>
+					<button id="onboardingSkipInvites" type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
+						Save Without Invites
+					</button>
+				</div>
+			</form>
+
+			<div id="onboardingStatus" class="mt-4 min-h-[20px] text-sm text-muted-foreground"></div>
+		</div>
+	</div>
+}

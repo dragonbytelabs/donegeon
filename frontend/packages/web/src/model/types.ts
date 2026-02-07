@@ -94,6 +94,7 @@ type ModalRefs = {
   recInv: HTMLInputElement;
 
   btnClose: HTMLButtonElement;
+  btnCalendar: HTMLButtonElement;
   btnSave: HTMLButtonElement;
 };
 

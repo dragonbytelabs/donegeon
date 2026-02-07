@@ -93,6 +93,10 @@ func NewHandler(opts Options) (http.Handler, error) {
 	})
 	mux.Handle("/api/player/state", authService.RequireAPI(http.HandlerFunc(playerHandler.State)))
 	mux.Handle("/api/player/unlock", authService.RequireAPI(http.HandlerFunc(playerHandler.Unlock)))
+	mux.Handle("/api/player/profile", authService.RequireAPI(http.HandlerFunc(playerHandler.Profile)))
+	mux.Handle("/api/player/onboarding/complete", authService.RequireAPI(http.HandlerFunc(playerHandler.CompleteOnboarding)))
+	mux.Handle("/api/player/team", authService.RequireAPI(http.HandlerFunc(playerHandler.Team)))
+	mux.Handle("/api/player/team/invite", authService.RequireAPI(http.HandlerFunc(playerHandler.TeamInvite)))
 
 	pluginRepo, err := plugin.NewFileRepo(filepath.Join(opts.DataDir, "plugins"))
 	if err != nil {
@@ -237,12 +241,54 @@ func NewHandler(opts Options) (http.Handler, error) {
 		})
 	})
 
+	requireOnboardedPage := func(next http.Handler) http.Handler {
+		return authService.RequirePage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			u, ok := auth.UserFromContext(r.Context())
+			if !ok {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
+			if playerRepo.ForUser(u.ID).NeedsOnboarding() {
+				http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
+				return
+			}
+			next.ServeHTTP(w, r)
+		}))
+	}
+
+	onboardingPage := authService.RequirePage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if !playerRepo.ForUser(u.ID).NeedsOnboarding() {
+			http.Redirect(w, r, "/tasks", http.StatusSeeOther)
+			return
+		}
+		templ.Handler(page.OnboardingPage()).ServeHTTP(w, r)
+	}))
+
+	appRoute := authService.RequirePage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		if playerRepo.ForUser(u.ID).NeedsOnboarding() {
+			http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, "/tasks", http.StatusSeeOther)
+	}))
+
 	mux.Handle("/", templ.Handler(page.HomePage()))
 	mux.Handle("/login", templ.Handler(page.LoginPage()))
-	mux.HandleFunc("/app", authService.HandleAppRoute)
-	mux.Handle("/board", authService.RequirePage(templ.Handler(page.BoardPage(opts.Config.UI.Board))))
-	mux.Handle("/tasks", authService.RequirePage(templ.Handler(page.TasksPage())))
-	mux.Handle("/builder", authService.RequirePage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/onboarding", onboardingPage)
+	mux.Handle("/app", appRoute)
+	mux.Handle("/board", requireOnboardedPage(templ.Handler(page.BoardPage(opts.Config.UI.Board))))
+	mux.Handle("/tasks", requireOnboardedPage(templ.Handler(page.TasksPage())))
+	mux.Handle("/builder", requireOnboardedPage(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/tasks#blueprints", http.StatusFound)
 	})))
 
