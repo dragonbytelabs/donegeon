@@ -1,7 +1,7 @@
 // Board API client
 
 import { CardEntity, StackEntity, type Engine } from "@donegeon/core";
-import { donegeonDefs, type DonegeonDefId } from "../model/catalog";
+import { resolveCardDef } from "../model/catalog";
 
 export interface SerializedCard {
   id: string;
@@ -68,7 +68,7 @@ export function applyBoardState(engine: Engine, state: BoardStateResponse): void
 
   for (const stackData of orderedStacks) {
     const cards = stackData.cards.map((cardId) => readCard(state, cardId)).map((card) => {
-      const def = donegeonDefs[card.defId as DonegeonDefId] ?? donegeonDefs["task.blank"];
+      const def = resolveCardDef(card.defId, card.data ?? {});
       return new CardEntity(card.id, def, card.data ?? {});
     });
     if (!cards.length) continue;

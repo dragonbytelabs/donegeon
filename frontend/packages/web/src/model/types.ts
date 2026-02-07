@@ -6,6 +6,7 @@ export type DonegeonCardKind =
   | "villager"
   | "task"
   | "modifier"
+  | "plugin"
   | "blueprint"
   | "loot"
   | "resource"

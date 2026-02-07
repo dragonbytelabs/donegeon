@@ -179,6 +179,11 @@ The backend must enforce these; the frontend may only display hints.
 - Board task cards sync to task repository (appear in `/tasks` view)
 - Validation rules enforced server-side: max modifiers, duplicate rules, global uniqueness, stacking rules
 
+### 2026-02-07
+- Added plugin marketplace foundation with runtime manifest registration (no restart), user-scoped installs, and coin-cost install gating.
+- Added core integration plugin manifests (`Google Calendar`, `Apple Calendar`, `Notion`, `Todoist`, `Jira`, `Zapier`) plus community plugin registration.
+- Installed plugins can spawn integration cards (`mod.plugin_*`) onto the board via `/tasks` marketplace controls.
+
 ### 2026-01-30
 - IndexedDB (idb) stores board state in browser for offline persistence
 - Frontend-only persistence accepted; Go syncs only task data for now

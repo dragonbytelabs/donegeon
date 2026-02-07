@@ -1,5 +1,5 @@
 import { CardEntity, StackEntity, type Engine } from "@donegeon/core";
-import { donegeonDefs, type DonegeonDefId } from "../../model/catalog";
+import { resolveCardDef } from "../../model/catalog";
 import type { BoardSnapshot } from "./schema";
 
 export function hydrateEngine(engine: Engine, snapshot: BoardSnapshot): void {
@@ -9,8 +9,8 @@ export function hydrateEngine(engine: Engine, snapshot: BoardSnapshot): void {
   // Restore stacks
   for (const stackData of snapshot.stacks) {
     const cards = stackData.cards.map((c) => {
-      const def = donegeonDefs[c.defId as DonegeonDefId];
-      return new CardEntity(c.id, def ?? donegeonDefs["task.blank"], c.data);
+      const def = resolveCardDef(c.defId, c.data ?? {});
+      return new CardEntity(c.id, def, c.data);
     });
 
     const stack = new StackEntity(stackData.id, stackData.pos, cards);

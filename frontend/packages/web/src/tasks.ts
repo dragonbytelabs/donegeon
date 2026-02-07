@@ -35,6 +35,35 @@ type BlueprintDTO = {
   createdAt?: string;
 };
 
+type PluginManifestDTO = {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  category: string;
+  version: string;
+  cardDefId: string;
+  cardTitle: string;
+  cardIcon: string;
+  installCost: number;
+  capabilities?: string[];
+  source: "core" | "community";
+};
+
+type PluginMarketplaceItemDTO = PluginManifestDTO & {
+  installed: boolean;
+};
+
+type PluginInstalledDetailDTO = PluginManifestDTO & {
+  installedAt: string;
+  enabled: boolean;
+};
+
+type PluginMarketplaceStateDTO = {
+  marketplace: PluginMarketplaceItemDTO[];
+  installed: PluginInstalledDetailDTO[];
+};
+
 type PlayerStateDTO = {
   loot: Record<string, number>;
   unlocks: Record<string, boolean>;
@@ -173,6 +202,73 @@ async function apiSpawnBlueprintToBoard(blueprint: BlueprintDTO, x: number, y: n
   }
 }
 
+async function apiPluginMarketplace() {
+  const res = await fetch(`/api/plugins/marketplace`);
+  if (!res.ok) throw new Error(`GET /api/plugins/marketplace failed: ${res.status}`);
+  return (await res.json()) as PluginMarketplaceStateDTO;
+}
+
+async function apiPluginRegister(input: PluginManifestDTO) {
+  const res = await fetch(`/api/plugins/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest: input }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || `POST /api/plugins/register failed: ${res.status}`);
+  return data as PluginManifestDTO;
+}
+
+async function apiPluginInstall(pluginId: string) {
+  const res = await fetch(`/api/plugins/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pluginId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) throw new Error(data?.error || `POST /api/plugins/install failed: ${res.status}`);
+  return data;
+}
+
+async function apiPluginUninstall(pluginId: string) {
+  const res = await fetch(`/api/plugins/uninstall`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pluginId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) throw new Error(data?.error || `POST /api/plugins/uninstall failed: ${res.status}`);
+  return data;
+}
+
+async function apiSpawnPluginToBoard(plugin: PluginManifestDTO, x: number, y: number) {
+  const res = await fetch(`/api/board/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cmd: "card.spawn",
+      args: {
+        defId: plugin.cardDefId,
+        x,
+        y,
+        data: {
+          pluginId: plugin.id,
+          pluginName: plugin.name,
+          title: plugin.cardTitle || plugin.name,
+          icon: plugin.cardIcon || "🔌",
+          provider: plugin.provider,
+          category: plugin.category,
+          capabilities: plugin.capabilities ?? [],
+        },
+      },
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.error || `POST /api/board/cmd failed: ${res.status}`);
+  }
+}
+
 async function apiUnlockFeature(feature: string) {
   const res = await fetch(`/api/player/unlock`, {
     method: "POST",
@@ -251,8 +347,28 @@ type BlueprintUIRefs = {
   err: HTMLDivElement;
 };
 
+type PluginUIRefs = {
+  root: HTMLDivElement;
+  id: HTMLInputElement;
+  name: HTMLInputElement;
+  provider: HTMLInputElement;
+  category: HTMLInputElement;
+  cardTitle: HTMLInputElement;
+  cardIcon: HTMLInputElement;
+  installCost: HTMLInputElement;
+  desc: HTMLTextAreaElement;
+  cardDef: HTMLInputElement;
+  capabilities: HTMLInputElement;
+  registerBtn: HTMLButtonElement;
+  sampleBtn: HTMLButtonElement;
+  list: HTMLDivElement;
+  err: HTMLDivElement;
+};
+
 let blueprintUI: BlueprintUIRefs | null = null;
 let blueprints: BlueprintDTO[] = [];
+let pluginUI: PluginUIRefs | null = null;
+let pluginState: PluginMarketplaceStateDTO = { marketplace: [], installed: [] };
 
 let unlockButtons:
   | {
@@ -451,6 +567,235 @@ function renderBlueprintList() {
 async function refreshBlueprints() {
   blueprints = await apiBlueprintList();
   renderBlueprintList();
+}
+
+function ensurePluginUI(): PluginUIRefs {
+  if (pluginUI) return pluginUI;
+  const page = document.querySelector(".mx-auto.max-w-5xl") as HTMLDivElement | null;
+  if (!page) throw new Error("Missing tasks page root");
+
+  const root = document.createElement("div");
+  root.id = "plugins";
+  root.className = "mt-6 rounded-lg border border-border bg-card p-4";
+  root.innerHTML = `
+    <div class="mb-3">
+      <div class="text-sm font-semibold">Plugin Marketplace</div>
+      <div class="text-xs opacity-70">Install core integrations, or register community plugin manifests without restarting the server.</div>
+    </div>
+    <div class="grid gap-2 md:grid-cols-3">
+      <div>
+        <label class="text-xs opacity-70">Plugin id</label>
+        <input data-pl-id class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="jira_workflow_plus" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Name</label>
+        <input data-pl-name class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Jira Workflow Plus" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Provider</label>
+        <input data-pl-provider class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Community" />
+      </div>
+    </div>
+    <div class="mt-2 grid gap-2 md:grid-cols-4">
+      <div>
+        <label class="text-xs opacity-70">Category</label>
+        <input data-pl-category class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="work" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Card title</label>
+        <input data-pl-card-title class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Jira Connector" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Card icon</label>
+        <input data-pl-card-icon class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="🧩" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Install cost (coin)</label>
+        <input data-pl-install-cost type="number" min="0" value="2" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" />
+      </div>
+    </div>
+    <div class="mt-2 grid gap-2 md:grid-cols-2">
+      <div>
+        <label class="text-xs opacity-70">Card def id</label>
+        <input data-pl-card-def class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="mod.plugin_jira_workflow_plus" />
+      </div>
+      <div>
+        <label class="text-xs opacity-70">Capabilities (comma-separated)</label>
+        <input data-pl-caps class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="issue.link, issue.transition" />
+      </div>
+    </div>
+    <div class="mt-2">
+      <label class="text-xs opacity-70">Description</label>
+      <textarea data-pl-desc rows="2" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm" placeholder="Adds Jira issue linking and transitions from task cards."></textarea>
+    </div>
+    <div class="mt-3 flex items-center gap-2">
+      <button data-pl-register type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">Register Manifest</button>
+      <button data-pl-sample type="button" class="rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-accent">Load Sample</button>
+      <div data-pl-err class="text-xs text-red-300"></div>
+    </div>
+    <div data-pl-list class="mt-4 space-y-2"></div>
+  `;
+  page.appendChild(root);
+
+  pluginUI = {
+    root,
+    id: q<HTMLInputElement>(root, "[data-pl-id]"),
+    name: q<HTMLInputElement>(root, "[data-pl-name]"),
+    provider: q<HTMLInputElement>(root, "[data-pl-provider]"),
+    category: q<HTMLInputElement>(root, "[data-pl-category]"),
+    cardTitle: q<HTMLInputElement>(root, "[data-pl-card-title]"),
+    cardIcon: q<HTMLInputElement>(root, "[data-pl-card-icon]"),
+    installCost: q<HTMLInputElement>(root, "[data-pl-install-cost]"),
+    cardDef: q<HTMLInputElement>(root, "[data-pl-card-def]"),
+    capabilities: q<HTMLInputElement>(root, "[data-pl-caps]"),
+    desc: q<HTMLTextAreaElement>(root, "[data-pl-desc]"),
+    registerBtn: q<HTMLButtonElement>(root, "[data-pl-register]"),
+    sampleBtn: q<HTMLButtonElement>(root, "[data-pl-sample]"),
+    list: q<HTMLDivElement>(root, "[data-pl-list]"),
+    err: q<HTMLDivElement>(root, "[data-pl-err]"),
+  };
+  return pluginUI;
+}
+
+function isPluginInstalled(id: string): boolean {
+  return pluginState.installed.some((p) => p.id === id);
+}
+
+function renderPluginList() {
+  const ui = ensurePluginUI();
+  ui.list.innerHTML = "";
+  if (pluginState.marketplace.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "text-xs opacity-70";
+    empty.textContent = "No plugins available.";
+    ui.list.appendChild(empty);
+    return;
+  }
+
+  pluginState.marketplace.forEach((plugin, index) => {
+    const row = document.createElement("div");
+    row.className = "rounded-md border border-border bg-background px-3 py-2";
+
+    const top = document.createElement("div");
+    top.className = "flex items-center gap-2";
+    const title = document.createElement("div");
+    title.className = "text-sm font-medium";
+    title.textContent = `${plugin.cardIcon || "🔌"} ${plugin.name}`;
+    const source = document.createElement("span");
+    source.className = "rounded-full border border-border px-2 py-0.5 text-[10px] opacity-70";
+    source.textContent = plugin.source;
+    const cat = document.createElement("span");
+    cat.className = "rounded-full border border-border px-2 py-0.5 text-[10px] opacity-70";
+    cat.textContent = plugin.category || "general";
+    top.append(title, source, cat);
+
+    const desc = document.createElement("div");
+    desc.className = "mt-1 text-xs opacity-75";
+    desc.textContent = plugin.description || "(no description)";
+
+    const meta = document.createElement("div");
+    meta.className = "mt-1 text-[11px] opacity-65";
+    const installed = isPluginInstalled(plugin.id);
+    meta.textContent = `${plugin.provider || "provider"} • v${plugin.version} • card ${plugin.cardDefId}${installed ? " • installed" : ""}`;
+
+    const actions = document.createElement("div");
+    actions.className = "mt-2 flex items-center gap-2";
+
+    const installBtn = document.createElement("button");
+    installBtn.type = "button";
+    installBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed";
+    if (installed) {
+      installBtn.textContent = "Installed";
+      installBtn.disabled = true;
+    } else if (coinBalance() < Number(plugin.installCost ?? 0)) {
+      installBtn.textContent = `Need ${plugin.installCost} 🪙`;
+      installBtn.disabled = true;
+    } else {
+      installBtn.textContent = `Install (${plugin.installCost} 🪙)`;
+      installBtn.disabled = false;
+      installBtn.addEventListener("click", async () => {
+        try {
+          await apiPluginInstall(plugin.id);
+          await refreshPlugins();
+          await loadPlayerState();
+        } catch (err: any) {
+          ui.err.textContent = String(err?.message ?? err);
+        }
+      });
+    }
+    actions.appendChild(installBtn);
+
+    if (installed) {
+      const spawnBtn = document.createElement("button");
+      spawnBtn.type = "button";
+      spawnBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent";
+      spawnBtn.textContent = "Spawn Card";
+      spawnBtn.addEventListener("click", async () => {
+        try {
+          const x = 260 + (index % 6) * 110;
+          const y = 180 + (Math.floor(index / 6) % 4) * 110;
+          await apiSpawnPluginToBoard(plugin, x, y);
+          window.location.href = "/board";
+        } catch (err: any) {
+          ui.err.textContent = String(err?.message ?? err);
+        }
+      });
+      actions.appendChild(spawnBtn);
+
+      const uninstallBtn = document.createElement("button");
+      uninstallBtn.type = "button";
+      uninstallBtn.className = "rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent";
+      uninstallBtn.textContent = "Uninstall";
+      uninstallBtn.addEventListener("click", async () => {
+        try {
+          await apiPluginUninstall(plugin.id);
+          await refreshPlugins();
+        } catch (err: any) {
+          ui.err.textContent = String(err?.message ?? err);
+        }
+      });
+      actions.appendChild(uninstallBtn);
+    }
+
+    row.append(top, desc, meta, actions);
+    ui.list.appendChild(row);
+  });
+}
+
+function collectPluginInput(): PluginManifestDTO {
+  const ui = ensurePluginUI();
+  const id = ui.id.value.trim();
+  const name = ui.name.value.trim();
+  const provider = ui.provider.value.trim() || "Community";
+  const category = ui.category.value.trim() || "automation";
+  const cardTitle = ui.cardTitle.value.trim() || name || id;
+  const cardIcon = ui.cardIcon.value.trim() || "🔌";
+  const installCost = Math.max(0, Number(ui.installCost.value || "0"));
+  const description = ui.desc.value.trim();
+  const cardDefId = (ui.cardDef.value.trim() || `mod.plugin_${id}`).toLowerCase();
+  const capabilities = ui.capabilities.value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return {
+    id,
+    name,
+    provider,
+    category,
+    description,
+    version: "1.0.0",
+    cardDefId,
+    cardTitle,
+    cardIcon,
+    installCost,
+    capabilities,
+    source: "community",
+  };
+}
+
+async function refreshPlugins() {
+  pluginState = await apiPluginMarketplace();
+  renderPluginList();
 }
 
 function collectBlueprintInput() {
@@ -664,7 +1009,7 @@ function render(tasks: TaskDTO[]) {
 }
 
 async function refresh() {
-  const [tasks, state, bp] = await Promise.all([
+  const [tasks, state, bp, plugins] = await Promise.all([
     apiList({
       status: statusSel.value,
       project: projectSel.value,
@@ -672,31 +1017,37 @@ async function refresh() {
     }),
     apiPlayerState(),
     apiBlueprintList(),
+    apiPluginMarketplace(),
   ]);
   playerState = state;
   blueprints = bp;
+  pluginState = plugins;
   renderPlayerState();
   const open = !overlay.classList.contains("hidden");
   if (open) applyEditorGates();
   render(tasks);
   renderBlueprintList();
+  renderPluginList();
 }
 
 async function initialLoad() {
   if (!playerState) {
     await loadPlayerState();
   }
-  const [tasks, bp] = await Promise.all([
+  const [tasks, bp, plugins] = await Promise.all([
     apiList({
       status: statusSel.value,
       project: projectSel.value,
       live: liveChk.checked,
     }),
     apiBlueprintList(),
+    apiPluginMarketplace(),
   ]);
   blueprints = bp;
+  pluginState = plugins;
   render(tasks);
   renderBlueprintList();
+  renderPluginList();
 }
 
 // ---------- wire up ----------
@@ -716,9 +1067,14 @@ function initOnce() {
   };
 
   const bpUI = ensureBlueprintUI();
+  const plUI = ensurePluginUI();
   if (window.location.hash === "#blueprints") {
     window.setTimeout(() => {
       bpUI.root.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  } else if (window.location.hash === "#plugins") {
+    window.setTimeout(() => {
+      plUI.root.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 50);
   }
 
@@ -807,6 +1163,41 @@ function initOnce() {
       await refreshBlueprints();
     } catch (err: any) {
       bpUI.err.textContent = String(err?.message ?? err);
+    }
+  });
+  on(plUI.sampleBtn, "click", () => {
+    plUI.id.value = "jira_workflow_plus";
+    plUI.name.value = "Jira Workflow Plus";
+    plUI.provider.value = "Community";
+    plUI.category.value = "work";
+    plUI.cardTitle.value = "Jira Workflow";
+    plUI.cardIcon.value = "🧩";
+    plUI.installCost.value = "3";
+    plUI.cardDef.value = "mod.plugin_jira_workflow_plus";
+    plUI.capabilities.value = "issue.link, issue.transition";
+    plUI.desc.value = "Adds Jira issue linking and status transitions from task stacks.";
+  });
+  on(plUI.registerBtn, "click", async () => {
+    plUI.err.textContent = "";
+    try {
+      const payload = collectPluginInput();
+      if (!payload.id || !payload.name) {
+        plUI.err.textContent = "Plugin id and name are required.";
+        return;
+      }
+      if (!payload.cardDefId.startsWith("mod.plugin_")) {
+        plUI.err.textContent = "Card def id must start with mod.plugin_.";
+        return;
+      }
+      await apiPluginRegister(payload);
+      await refreshPlugins();
+      plUI.id.value = "";
+      plUI.name.value = "";
+      plUI.desc.value = "";
+      plUI.cardDef.value = "";
+      plUI.capabilities.value = "";
+    } catch (err: any) {
+      plUI.err.textContent = String(err?.message ?? err);
     }
   });
   on(refreshBtn, "click", () => {

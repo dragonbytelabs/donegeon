@@ -16,6 +16,7 @@ import (
 	"donegeon/internal/config"
 	"donegeon/internal/httpmw"
 	"donegeon/internal/player"
+	"donegeon/internal/plugin"
 	"donegeon/internal/quest"
 	"donegeon/internal/task"
 	"donegeon/static"
@@ -92,6 +93,30 @@ func NewHandler(opts Options) (http.Handler, error) {
 	})
 	mux.Handle("/api/player/state", authService.RequireAPI(http.HandlerFunc(playerHandler.State)))
 	mux.Handle("/api/player/unlock", authService.RequireAPI(http.HandlerFunc(playerHandler.Unlock)))
+
+	pluginRepo, err := plugin.NewFileRepo(filepath.Join(opts.DataDir, "plugins"))
+	if err != nil {
+		return nil, err
+	}
+	pluginHandler := plugin.NewHandler(pluginRepo)
+	pluginHandler.SetRepoResolver(func(r *http.Request) plugin.Repo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return pluginRepo
+		}
+		return pluginRepo.ForUser(u.ID)
+	})
+	pluginHandler.SetPlayerResolver(func(r *http.Request) *player.FileRepo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return playerRepo
+		}
+		return playerRepo.ForUser(u.ID)
+	})
+	mux.Handle("/api/plugins/marketplace", authService.RequireAPI(http.HandlerFunc(pluginHandler.Marketplace)))
+	mux.Handle("/api/plugins/register", authService.RequireAPI(http.HandlerFunc(pluginHandler.Register)))
+	mux.Handle("/api/plugins/install", authService.RequireAPI(http.HandlerFunc(pluginHandler.Install)))
+	mux.Handle("/api/plugins/uninstall", authService.RequireAPI(http.HandlerFunc(pluginHandler.Uninstall)))
 
 	taskFileRepo, err := task.NewFileRepo(filepath.Join(opts.DataDir, "tasks"))
 	if err != nil {

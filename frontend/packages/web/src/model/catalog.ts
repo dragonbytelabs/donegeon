@@ -271,6 +271,32 @@ export const donegeonDefs = {
 
 export type DonegeonDefId = keyof typeof donegeonDefs;
 
+function asText(v: unknown): string {
+    return typeof v === "string" ? v.trim() : "";
+}
+
+function dynamicPluginDef(defId: string, data: Record<string, unknown> = {}): DonegeonCardDef {
+    const title = asText(data.title) || asText(data.pluginName) || "Plugin Card";
+    const icon = asText(data.icon) || "🔌";
+    return {
+        id: defId,
+        kind: "modifier",
+        title,
+        icon,
+        skin: "sl-kind-stone",
+        leftBadge: "PLUG",
+    };
+}
+
+export function resolveCardDef(defId: string, data: Record<string, unknown> = {}): DonegeonCardDef {
+    const known = donegeonDefs[defId as DonegeonDefId];
+    if (known) return known;
+    if (defId.startsWith("mod.plugin_") || defId.startsWith("plugin.")) {
+        return dynamicPluginDef(defId, data);
+    }
+    return donegeonDefs["task.blank"];
+}
+
 export function spawn(defId: DonegeonDefId, data: Record<string, unknown> = {}) {
     const def = donegeonDefs[defId];
     if (!def) throw new Error(`Unknown card def: ${defId}`);

@@ -63,6 +63,10 @@ func TestServer_OTPFlowAndEmbeddedStatic(t *testing.T) {
 	if tasksRes.Code != http.StatusOK {
 		t.Fatalf("tasks expected 200, got %d body=%s", tasksRes.Code, tasksRes.Body.String())
 	}
+	pluginRes := app.request(http.MethodGet, "/api/plugins/marketplace", nil, "")
+	if pluginRes.Code != http.StatusOK {
+		t.Fatalf("plugin marketplace expected 200, got %d body=%s", pluginRes.Code, pluginRes.Body.String())
+	}
 
 	pageRes := app.request(http.MethodGet, "/tasks", nil, "")
 	if pageRes.Code != http.StatusOK {
