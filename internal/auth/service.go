@@ -270,23 +270,27 @@ func (s *Service) ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) RequirePage(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, _, ok := s.AuthenticateRequest(r, time.Now()); !ok {
+		u, sess, ok := s.AuthenticateRequest(r, time.Now())
+		if !ok {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
-		next.ServeHTTP(w, r)
+		ctx := withSessionContext(withUserContext(r.Context(), u), sess)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func (s *Service) RequireAPI(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, _, ok := s.AuthenticateRequest(r, time.Now()); !ok {
+		u, sess, ok := s.AuthenticateRequest(r, time.Now())
+		if !ok {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": "unauthorized"})
 			return
 		}
-		next.ServeHTTP(w, r)
+		ctx := withSessionContext(withUserContext(r.Context(), u), sess)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

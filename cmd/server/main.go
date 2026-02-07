@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"donegeon/internal/auth"
 	"donegeon/internal/board"
@@ -38,8 +39,18 @@ func main() {
 	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
 
 	// ---- Task API ----
-	taskRepo := task.NewMemoryRepo()
-	taskHandler := task.NewHandler(taskRepo)
+	taskFileRepo, err := task.NewFileRepo("data/tasks")
+	if err != nil {
+		log.Fatalf("init task repo: %v", err)
+	}
+	taskHandler := task.NewHandler(taskFileRepo)
+	taskHandler.SetRepoResolver(func(r *http.Request) task.Repo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return taskFileRepo
+		}
+		return taskFileRepo.ForUser(u.ID)
+	})
 
 	mux.Handle("/api/tasks", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksRoot)))      // GET,POST /api/tasks
 	mux.Handle("/api/tasks/", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksSub)))      // GET,PATCH /api/tasks/{id}
@@ -50,9 +61,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("init board repo: %v", err)
 	}
-	boardHandler := board.NewHandler(boardRepo, taskRepo, cfg)
+	boardHandler := board.NewHandler(boardRepo, taskFileRepo, cfg)
+	boardHandler.SetBoardIDResolver(func(r *http.Request) string {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return ""
+		}
+		boardName := strings.TrimSpace(r.URL.Query().Get("board"))
+		if boardName == "" {
+			boardName = "default"
+		}
+		// Scope board files by user to avoid cross-user leakage.
+		return "user_" + u.ID + "__" + boardName
+	})
+	boardHandler.SetTaskRepoResolver(func(r *http.Request) task.Repo {
+		u, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			return taskFileRepo
+		}
+		return taskFileRepo.ForUser(u.ID)
+	})
 
-	mux.Handle("/api/board/state", authService.RequireAPI(http.HandlerFunc(boardHandler.GetState))) // GET/PUT /api/board/state
+	mux.Handle("/api/board/state", authService.RequireAPI(http.HandlerFunc(boardHandler.GetState))) // GET /api/board/state
 	mux.Handle("/api/board/cmd", authService.RequireAPI(http.HandlerFunc(boardHandler.Command)))    // POST /api/board/cmd
 
 	// API: expose config to frontend (read-only)

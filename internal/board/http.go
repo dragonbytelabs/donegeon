@@ -12,9 +12,12 @@ import (
 
 // Handler handles board-related HTTP requests.
 type Handler struct {
-	repo      Repo
-	taskRepo  task.Repo
-	validator *Validator
+	repo             Repo
+	taskRepo         task.Repo
+	validator        *Validator
+	cfg              *config.Config
+	boardIDResolver  func(*http.Request) string
+	taskRepoResolver func(*http.Request) task.Repo
 }
 
 // NewHandler creates a new board handler.
@@ -23,7 +26,38 @@ func NewHandler(repo Repo, taskRepo task.Repo, cfg *config.Config) *Handler {
 		repo:      repo,
 		taskRepo:  taskRepo,
 		validator: NewValidator(cfg),
+		cfg:       cfg,
 	}
+}
+
+func (h *Handler) SetBoardIDResolver(fn func(*http.Request) string) {
+	h.boardIDResolver = fn
+}
+
+func (h *Handler) SetTaskRepoResolver(fn func(*http.Request) task.Repo) {
+	h.taskRepoResolver = fn
+}
+
+func (h *Handler) boardIDFromRequest(r *http.Request) string {
+	if h.boardIDResolver != nil {
+		if id := h.boardIDResolver(r); id != "" {
+			return id
+		}
+	}
+	boardID := r.URL.Query().Get("board")
+	if boardID == "" {
+		boardID = "default"
+	}
+	return boardID
+}
+
+func (h *Handler) taskRepoFromRequest(r *http.Request) task.Repo {
+	if h.taskRepoResolver != nil {
+		if repo := h.taskRepoResolver(r); repo != nil {
+			return repo
+		}
+	}
+	return h.taskRepo
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -51,8 +85,8 @@ type BoardStateResponse struct {
 // GET /api/board/state
 func (h *Handler) GetState(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {
-		// PUT /api/board/state - sync frontend state to server
-		h.SyncState(w, r)
+		// Deprecated: server-authoritative mutations must go through /api/board/cmd.
+		writeErr(w, http.StatusGone, "PUT /api/board/state is deprecated; use POST /api/board/cmd")
 		return
 	}
 
@@ -61,10 +95,7 @@ func (h *Handler) GetState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boardID := r.URL.Query().Get("board")
-	if boardID == "" {
-		boardID = "default"
-	}
+	boardID := h.boardIDFromRequest(r)
 
 	state, err := h.repo.Load(boardID)
 	if err != nil {
@@ -102,10 +133,7 @@ type SyncCard struct {
 
 // PUT /api/board/state - sync frontend state to server
 func (h *Handler) SyncState(w http.ResponseWriter, r *http.Request) {
-	boardID := r.URL.Query().Get("board")
-	if boardID == "" {
-		boardID = "default"
-	}
+	boardID := h.boardIDFromRequest(r)
 
 	var req SyncStateRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -165,10 +193,7 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	boardID := r.URL.Query().Get("board")
-	if boardID == "" {
-		boardID = "default"
-	}
+	boardID := h.boardIDFromRequest(r)
 
 	var req CommandRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -181,8 +206,17 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	serverVersion := fmt.Sprintf("%d", state.NextZ)
+	if req.ClientVersion != "" && req.ClientVersion != serverVersion {
+		writeJSON(w, http.StatusConflict, CommandResponse{
+			OK:         false,
+			NewVersion: serverVersion,
+			Error:      "board version conflict",
+		})
+		return
+	}
 
-	patch, err := h.executeCommand(state, req.Cmd, req.Args)
+	patch, err := h.executeCommand(state, h.taskRepoFromRequest(r), req.Cmd, req.Args)
 	if err != nil {
 		writeJSON(w, 400, CommandResponse{
 			OK:    false,
@@ -204,8 +238,16 @@ func (h *Handler) Command(w http.ResponseWriter, r *http.Request) {
 }
 
 // executeCommand dispatches the command to the appropriate handler.
-func (h *Handler) executeCommand(state *model.BoardState, cmd string, args map[string]any) (any, error) {
+func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, cmd string, args map[string]any) (any, error) {
 	switch cmd {
+	case "board.seed_default":
+		return h.cmdBoardSeedDefault(state, args)
+	case "card.spawn":
+		return h.cmdCardSpawn(state, args)
+	case "deck.spawn_pack":
+		return h.cmdDeckSpawnPack(state, args)
+	case "deck.open_pack":
+		return h.cmdDeckOpenPack(state, args)
 	case "stack.move":
 		return h.cmdStackMove(state, args)
 	case "stack.bringToFront":
@@ -216,12 +258,14 @@ func (h *Handler) executeCommand(state *model.BoardState, cmd string, args map[s
 		return h.cmdStackSplit(state, args)
 	case "stack.unstack":
 		return h.cmdStackUnstack(state, args)
+	case "stack.remove":
+		return h.cmdStackRemove(state, args)
 	case "task.create_blank":
-		return h.cmdTaskCreateBlank(state, args)
+		return h.cmdTaskCreateBlank(state, taskRepo, args)
 	case "task.set_title":
-		return h.cmdTaskSetTitle(state, args)
+		return h.cmdTaskSetTitle(state, taskRepo, args)
 	case "task.set_description":
-		return h.cmdTaskSetDescription(state, args)
+		return h.cmdTaskSetDescription(state, taskRepo, args)
 	case "task.add_modifier":
 		return h.cmdTaskAddModifier(state, args)
 	case "task.assign_villager":
@@ -268,6 +312,20 @@ func getIntOr(args map[string]any, key string, def int) int {
 		return def
 	}
 	return int(f)
+}
+
+// Helper to get optional int.
+func getIntPtr(args map[string]any, key string) (*int, error) {
+	v, ok := args[key]
+	if !ok {
+		return nil, nil
+	}
+	f, ok := v.(float64)
+	if !ok {
+		return nil, fmt.Errorf("field %s must be a number", key)
+	}
+	n := int(f)
+	return &n, nil
 }
 
 // stack.move { stackId, x, y }
@@ -363,20 +421,55 @@ func (h *Handler) cmdStackSplit(state *model.BoardState, args map[string]any) (a
 	}
 	offsetX := getIntOr(args, "offsetX", 12)
 	offsetY := getIntOr(args, "offsetY", 12)
+	newX, err := getIntPtr(args, "newX")
+	if err != nil {
+		return nil, err
+	}
+	newY, err := getIntPtr(args, "newY")
+	if err != nil {
+		return nil, err
+	}
 
 	stack := state.GetStack(model.StackID(stackID))
 	if stack == nil {
 		return nil, fmt.Errorf("stack not found: %s", stackID)
 	}
 
-	newStack := state.SplitStack(model.StackID(stackID), index, model.Point{X: offsetX, Y: offsetY})
+	var newStack *model.Stack
+	if index == 0 {
+		newStack = state.PopBottom(model.StackID(stackID), model.Point{X: offsetX, Y: offsetY})
+	} else {
+		newStack = state.SplitStack(model.StackID(stackID), index, model.Point{X: offsetX, Y: offsetY})
+	}
 	if newStack == nil {
 		return nil, fmt.Errorf("could not split stack at index %d", index)
+	}
+	if newX != nil && newY != nil {
+		newStack.Pos = model.Point{X: *newX, Y: *newY}
 	}
 
 	return map[string]any{
 		"source":   stack,
 		"newStack": newStack,
+	}, nil
+}
+
+// stack.remove { stackId }
+func (h *Handler) cmdStackRemove(state *model.BoardState, args map[string]any) (any, error) {
+	stackID, err := getString(args, "stackId")
+	if err != nil {
+		return nil, err
+	}
+	stack := state.GetStack(model.StackID(stackID))
+	if stack == nil {
+		return nil, fmt.Errorf("stack not found: %s", stackID)
+	}
+	for _, cardID := range stack.Cards {
+		state.RemoveCard(cardID)
+	}
+	state.RemoveStack(model.StackID(stackID))
+	return map[string]any{
+		"removedStack": stackID,
 	}, nil
 }
 
@@ -415,7 +508,7 @@ func (h *Handler) cmdStackUnstack(state *model.BoardState, args map[string]any) 
 }
 
 // task.create_blank { x, y }
-func (h *Handler) cmdTaskCreateBlank(state *model.BoardState, args map[string]any) (any, error) {
+func (h *Handler) cmdTaskCreateBlank(state *model.BoardState, taskRepo task.Repo, args map[string]any) (any, error) {
 	x, err := getInt(args, "x")
 	if err != nil {
 		return nil, err
@@ -427,9 +520,9 @@ func (h *Handler) cmdTaskCreateBlank(state *model.BoardState, args map[string]an
 
 	// Create task in task repo first (so it appears in /tasks view)
 	var taskID model.TaskID
-	if h.taskRepo != nil {
+	if taskRepo != nil {
 		inbox := "inbox"
-		t, err := h.taskRepo.Create(model.Task{
+		t, err := taskRepo.Create(model.Task{
 			Title:       "",
 			Description: "",
 			Project:     &inbox,
@@ -440,7 +533,7 @@ func (h *Handler) cmdTaskCreateBlank(state *model.BoardState, args map[string]an
 		taskID = t.ID
 
 		// Mark as live (on board)
-		_ = h.taskRepo.SetLive(taskID, true)
+		_ = taskRepo.SetLive(taskID, true)
 	}
 
 	// Create a blank task card with inbox as default zone
@@ -462,7 +555,7 @@ func (h *Handler) cmdTaskCreateBlank(state *model.BoardState, args map[string]an
 }
 
 // task.set_title { taskCardId, title }
-func (h *Handler) cmdTaskSetTitle(state *model.BoardState, args map[string]any) (any, error) {
+func (h *Handler) cmdTaskSetTitle(state *model.BoardState, taskRepo task.Repo, args map[string]any) (any, error) {
 	cardID, err := getString(args, "taskCardId")
 	if err != nil {
 		return nil, err
@@ -483,9 +576,9 @@ func (h *Handler) cmdTaskSetTitle(state *model.BoardState, args map[string]any) 
 	card.Data["title"] = title
 
 	// Sync to task repo if linked
-	if h.taskRepo != nil {
+	if taskRepo != nil {
 		if taskIDStr, ok := card.Data["taskId"].(string); ok && taskIDStr != "" {
-			_, _ = h.taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Title: &title})
+			_, _ = taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Title: &title})
 		}
 	}
 
@@ -495,7 +588,7 @@ func (h *Handler) cmdTaskSetTitle(state *model.BoardState, args map[string]any) 
 }
 
 // task.set_description { taskCardId, description }
-func (h *Handler) cmdTaskSetDescription(state *model.BoardState, args map[string]any) (any, error) {
+func (h *Handler) cmdTaskSetDescription(state *model.BoardState, taskRepo task.Repo, args map[string]any) (any, error) {
 	cardID, err := getString(args, "taskCardId")
 	if err != nil {
 		return nil, err
@@ -516,9 +609,9 @@ func (h *Handler) cmdTaskSetDescription(state *model.BoardState, args map[string
 	card.Data["description"] = description
 
 	// Sync to task repo if linked
-	if h.taskRepo != nil {
+	if taskRepo != nil {
 		if taskIDStr, ok := card.Data["taskId"].(string); ok && taskIDStr != "" {
-			_, _ = h.taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Description: &description})
+			_, _ = taskRepo.Update(model.TaskID(taskIDStr), task.Patch{Description: &description})
 		}
 	}
 

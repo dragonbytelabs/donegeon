@@ -1,13 +1,18 @@
 import type { Engine } from "@donegeon/core";
 import { snapToGrid } from "@donegeon/core";
-import { DonegeonConfig } from "../model/types";
 import { clientToBoard } from "./geom.dom";
 import { getPan, setPan, applyPan } from "./pan";
-import { openPackFromDeck } from "./deck";
-import { spawn } from "../model/catalog";
 import { scheduleLiveSync } from "./liveSync";
 import { scheduleSave } from "./storage";
-import { cmdStackMove, cmdStackMerge, cmdStackSplit } from "./api";
+import {
+  cmdDeckOpenPack,
+  cmdDeckSpawnPack,
+  cmdStackMerge,
+  cmdStackMove,
+  cmdStackRemove,
+  cmdStackSplit,
+  reloadBoard,
+} from "./api";
 import { addLoot, isCollectableLoot } from "./inventory";
 
 const MERGE_THRESHOLD_AREA = 92 * 40; // same spirit as legacy
@@ -26,28 +31,6 @@ type DragState =
     moved: boolean;
   }
   | null;
-
-function ensureTaskFaceCard(engine: Engine, stackId: string) {
-  const s = engine.getStack(stackId);
-  if (!s) return;
-
-  const cards = s.cards[0]();
-  if (cards.length <= 1) return;
-
-  const tasks = cards.filter(c => c.def.kind === "task");
-  if (!tasks.length) return;
-
-  const others = cards.filter(c => c.def.kind !== "task");
-  const next = [...others, ...tasks];
-
-  // only set if changed
-  let changed = false;
-  for (let i = 0; i < cards.length; i++) {
-    if (cards[i] !== next[i]) { changed = true; break; }
-  }
-  if (changed) s.cards[1](next);
-}
-
 
 function stackNodeById(id: string): HTMLElement | null {
   return document.querySelector(`.sl-stack[data-stack-id="${id}"]`) as HTMLElement | null;
@@ -168,7 +151,7 @@ function bindLongPressMenu(_engine: Engine, boardRoot: HTMLElement) {
  * Stack drag + merge + open interactions.
  * (Keeps it tight: no unstack/split UX here yet.)
  */
-function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLElement, cfg: DonegeonConfig, counter: { firstDayOpenIndex: number }) {
+function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLElement) {
   boardRoot.addEventListener("contextmenu", (e) => e.preventDefault());
 
   let drag: DragState = null;
@@ -299,21 +282,25 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
       const cy = br.top + br.height * 0.45;
       const p = clientToBoard(cx, cy, boardRoot, getPan());
 
-      engine.createStack(snapToGrid(p.x, p.y), [spawn("deck.first_day_pack")]);
-      scheduleLiveSync(engine);
+      void cmdDeckSpawnPack(stackId, p.x, p.y, "deck.first_day_pack")
+        .then(() => reloadBoard(engine))
+        .then(() => scheduleLiveSync(engine))
+        .catch((err) => {
+          console.warn("deck pack spawn sync failed", err);
+          void reloadBoard(engine).catch(() => {});
+        });
 
       return;
     }
 
     if (top.def.id === "deck.first_day_pack") {
-      const seed = 1337 + counter.firstDayOpenIndex++;
-      openPackFromDeck({
-        cfg,
-        engine,
-        deckStackId: stackId,
-        deckIdForDraws: "deck.first_day",
-        seed,
-      });
+      void cmdDeckOpenPack(stackId, "deck.first_day")
+        .then(() => reloadBoard(engine))
+        .then(() => scheduleLiveSync(engine))
+        .catch((err) => {
+          console.warn("deck open sync failed", err);
+          void reloadBoard(engine).catch(() => {});
+        });
       return;
     }
   });
@@ -331,29 +318,14 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
     if (ended.mode === "card" && ended.moved && ended.cardIndex != null) {
       const pan = getPan();
       const drop = clientToBoard(e.clientX, e.clientY, boardRoot, pan);
-
-      // Engine.splitStack() soft-fails for index <= 0, so 2-card stacks (bottom card idx=0)
-      // need a different path. Peel the bottom card with popBottom().
-      let ns =
-        ended.cardIndex === 0
-          ? engine.popBottom(ended.stackId, { x: 18, y: 18 })
-          : engine.splitStack(ended.stackId, ended.cardIndex, { x: 18, y: 18 });
-
-      if (!ns) return;
-
       const snappedPos = snapToGrid(drop.x, drop.y);
-      ns.pos[1](snappedPos);
-      engine.bringToFront(ns.id);
-
-      // keep "task face card" rule on both stacks
-      ensureTaskFaceCard(engine, ended.stackId);
-      ensureTaskFaceCard(engine, ns.id);
-      scheduleLiveSync(engine);
-
-      // Sync split to server (fire and forget)
-      cmdStackSplit(ended.stackId, ended.cardIndex, 18, 18).catch((err) => {
-        console.warn("split sync failed", err);
-      });
+      void cmdStackSplit(ended.stackId, ended.cardIndex, 18, 18, snappedPos.x, snappedPos.y)
+        .then(() => reloadBoard(engine))
+        .then(() => scheduleLiveSync(engine))
+        .catch((err) => {
+          console.warn("split sync failed", err);
+          void reloadBoard(engine).catch(() => {});
+        });
 
       return;
     }
@@ -384,25 +356,31 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
             addLoot(lootType, 1);
             // Remove the source stack (it's been collected)
             engine.removeStack(ended.stackId);
-            scheduleLiveSync(engine);
             scheduleSave(engine);
+            void cmdStackRemove(ended.stackId)
+              .then(() => reloadBoard(engine))
+              .then(() => scheduleLiveSync(engine))
+              .catch((err) => {
+                console.warn("collect sync failed", err);
+                void reloadBoard(engine).catch(() => {});
+              });
             return;
           }
         }
 
-        // Normal merge behavior
-        engine.mergeStacks(target, ended.stackId);
-        ensureTaskFaceCard(engine, target);
-        scheduleLiveSync(engine);
-
-        // Sync merge to server (fire and forget)
-        cmdStackMerge(target, ended.stackId).catch((err) => {
-          console.warn("merge sync failed", err);
-        });
+        // Normal merge behavior goes through server; then rehydrate.
+        void cmdStackMerge(target, ended.stackId)
+          .then(() => reloadBoard(engine))
+          .then(() => scheduleLiveSync(engine))
+          .catch((err) => {
+            console.warn("merge sync failed", err);
+            void reloadBoard(engine).catch(() => {});
+          });
       } else {
-        // Just a position move, sync to server
-        cmdStackMove(ended.stackId, snappedPos.x, snappedPos.y).catch((err) => {
+        // Just a position move; local movement is optimistic and server version is updated on success.
+        void cmdStackMove(ended.stackId, snappedPos.x, snappedPos.y).catch((err) => {
           console.warn("move sync failed", err);
+          void reloadBoard(engine).catch(() => {});
         });
       }
       // Save position changes (engine events don't cover position moves)

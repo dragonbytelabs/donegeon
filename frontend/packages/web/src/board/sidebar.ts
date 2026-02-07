@@ -1,8 +1,8 @@
 import type { Engine } from "@donegeon/core";
-import { snapToGrid } from "@donegeon/core";
-import { spawn, type DonegeonDefId } from "../model/catalog";
+import type { DonegeonDefId } from "../model/catalog";
 import { clientToBoard } from "./geom.dom";
 import { getPan } from "./pan";
+import { cmdCardSpawn, reloadBoard } from "./api";
 
 function qs<T extends Element>(sel: string) {
   return document.querySelector(sel) as T | null;
@@ -52,7 +52,12 @@ export function initShell(engine: Engine, boardRoot: HTMLElement) {
     const pan = getPan();
     const p = clientToBoard(cx, cy, boardRoot, pan);
 
-    engine.createStack(snapToGrid(p.x, p.y), [spawn(defId)]);
+    void cmdCardSpawn(defId, p.x, p.y)
+      .then(() => reloadBoard(engine))
+      .catch((err) => {
+        console.warn("sidebar spawn sync failed", err);
+        void reloadBoard(engine).catch(() => {});
+      });
     if (window.matchMedia("(max-width: 768px)").matches) closeSidebar();
   });
 }

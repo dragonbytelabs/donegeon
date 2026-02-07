@@ -1,6 +1,7 @@
 // Board API client
 
-import type { Engine } from "@donegeon/core";
+import { CardEntity, StackEntity, type Engine } from "@donegeon/core";
+import { donegeonDefs, type DonegeonDefId } from "../model/catalog";
 
 export interface SerializedCard {
   id: string;
@@ -12,15 +13,7 @@ export interface SerializedStack {
   id: string;
   pos: { x: number; y: number };
   z: number;
-  cards: string[]; // Card IDs
-}
-
-// For syncing to server (includes full card data)
-export interface SyncStack {
-  id: string;
-  pos: { x: number; y: number };
-  z: number;
-  cards: SerializedCard[];
+  cards: string[]; // Card IDs (resolved via BoardStateResponse.cards)
 }
 
 export interface BoardStateResponse {
@@ -37,13 +30,82 @@ export interface CommandResponse {
 }
 
 const API_BASE = "/api/board";
+let boardVersion = "";
+
+export function getBoardVersion(): string {
+  return boardVersion;
+}
+
+function setBoardVersion(version: string | undefined): void {
+  if (typeof version === "string" && version.trim() !== "") {
+    boardVersion = version;
+  }
+}
+
+function readCard(state: BoardStateResponse, cardId: string): SerializedCard {
+  const c = state.cards[cardId];
+  if (!c) {
+    return {
+      id: cardId,
+      defId: "task.blank",
+      data: {},
+    };
+  }
+  return c;
+}
+
+export function applyBoardState(engine: Engine, state: BoardStateResponse): void {
+  const existing = Array.from(engine.stacks.keys());
+  for (const stackId of existing) {
+    engine.removeStack(stackId);
+  }
+
+  const orderedStacks = Object.values(state.stacks).sort((a, b) => a.z - b.z);
+  let maxZ = 10;
+
+  for (const stackData of orderedStacks) {
+    const cards = stackData.cards.map((cardId) => readCard(state, cardId)).map((card) => {
+      const def = donegeonDefs[card.defId as DonegeonDefId] ?? donegeonDefs["task.blank"];
+      return new CardEntity(card.id, def, card.data ?? {});
+    });
+    if (!cards.length) continue;
+
+    const stack = new StackEntity(stackData.id, stackData.pos, cards);
+    stack.z[1](stackData.z);
+    maxZ = Math.max(maxZ, stackData.z);
+    engine.addStack(stack);
+  }
+
+  const serverVersion = Number.parseInt(state.version, 10);
+  if (Number.isFinite(serverVersion)) {
+    maxZ = Math.max(maxZ, serverVersion);
+  }
+  engine.setMaxZ(maxZ);
+  setBoardVersion(state.version);
+}
 
 export async function fetchBoardState(boardId = "default"): Promise<BoardStateResponse> {
   const res = await fetch(`${API_BASE}/state?board=${boardId}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch board state: ${res.status}`);
   }
-  return res.json();
+  const data: BoardStateResponse = await res.json();
+  setBoardVersion(data.version);
+  return data;
+}
+
+export async function reloadBoard(engine: Engine, boardId = "default"): Promise<BoardStateResponse> {
+  const state = await fetchBoardState(boardId);
+  applyBoardState(engine, state);
+  return state;
+}
+
+async function parseJSONSafe(res: Response): Promise<any> {
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
 }
 
 export async function sendCommand(
@@ -51,16 +113,22 @@ export async function sendCommand(
   args: Record<string, unknown>,
   boardId = "default"
 ): Promise<CommandResponse> {
+  const clientVersion = getBoardVersion();
   const res = await fetch(`${API_BASE}/cmd?board=${boardId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cmd, args }),
+    body: JSON.stringify({
+      cmd,
+      args,
+      clientVersion: clientVersion || undefined,
+    }),
   });
 
-  const data = await res.json();
+  const data = await parseJSONSafe(res);
   if (!res.ok || !data.ok) {
     throw new Error(data.error || `Command failed: ${res.status}`);
   }
+  setBoardVersion(data.newVersion);
   return data;
 }
 
@@ -78,42 +146,46 @@ export function cmdStackMerge(targetId: string, sourceId: string) {
   return sendCommand("stack.merge", { targetId, sourceId });
 }
 
-export function cmdStackSplit(stackId: string, index: number, offsetX = 12, offsetY = 12) {
-  return sendCommand("stack.split", { stackId, index, offsetX, offsetY });
+export function cmdStackSplit(
+  stackId: string,
+  index: number,
+  offsetX = 12,
+  offsetY = 12,
+  newX?: number,
+  newY?: number
+) {
+  return sendCommand("stack.split", { stackId, index, offsetX, offsetY, newX, newY });
 }
 
 export function cmdStackUnstack(stackId: string, positions: { x: number; y: number }[]) {
   return sendCommand("stack.unstack", { stackId, positions });
 }
 
+export function cmdStackRemove(stackId: string) {
+  return sendCommand("stack.remove", { stackId });
+}
+
 export function cmdTaskCreateBlank(x: number, y: number) {
   return sendCommand("task.create_blank", { x, y });
 }
 
-// Sync entire board state to server
-export async function syncBoardState(engine: Engine, boardId = "default"): Promise<void> {
-  const stacks: SyncStack[] = [];
+export function cmdBoardSeedDefault(deckRowY: number) {
+  return sendCommand("board.seed_default", { deckRowY });
+}
 
-  for (const [id, stack] of engine.stacks) {
-    stacks.push({
-      id,
-      pos: { ...stack.pos[0]() },
-      z: stack.z[0](),
-      cards: stack.cards[0]().map((card) => ({
-        id: card.id,
-        defId: card.def.id,
-        data: { ...card.data },
-      })),
-    });
-  }
+export function cmdCardSpawn(defId: string, x: number, y: number, data: Record<string, unknown> = {}) {
+  return sendCommand("card.spawn", { defId, x, y, data });
+}
 
-  const res = await fetch(`${API_BASE}/state?board=${boardId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ stacks, maxZ: engine.getMaxZ() }),
-  });
+export function cmdDeckSpawnPack(
+  deckStackId: string,
+  x: number,
+  y: number,
+  packDefId = "deck.first_day_pack"
+) {
+  return sendCommand("deck.spawn_pack", { deckStackId, x, y, packDefId });
+}
 
-  if (!res.ok) {
-    throw new Error(`Failed to sync board state: ${res.status}`);
-  }
+export function cmdDeckOpenPack(packStackId: string, deckId: string, radius = 170) {
+  return sendCommand("deck.open_pack", { packStackId, deckId, radius });
 }

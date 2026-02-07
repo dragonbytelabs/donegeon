@@ -9,11 +9,25 @@ import (
 )
 
 type Handler struct {
-	repo Repo
+	repo         Repo
+	repoResolver func(*http.Request) Repo
 }
 
 func NewHandler(repo Repo) *Handler {
 	return &Handler{repo: repo}
+}
+
+func (h *Handler) SetRepoResolver(fn func(*http.Request) Repo) {
+	h.repoResolver = fn
+}
+
+func (h *Handler) repoForRequest(r *http.Request) Repo {
+	if h.repoResolver != nil {
+		if repo := h.repoResolver(r); repo != nil {
+			return repo
+		}
+	}
+	return h.repo
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -62,6 +76,8 @@ func parseBoolPtr(s string) *bool {
 
 // /api/tasks  (collection)
 func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
+	repo := h.repoForRequest(r)
+
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
@@ -70,7 +86,7 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 			Project: q.Get("project"),
 			Live:    parseBoolPtr(q.Get("live")),
 		}
-		ts, err := h.repo.List(filter)
+		ts, err := repo.List(filter)
 		if err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -86,7 +102,7 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		in.Project = normalizeProject(in.Project)
 
-		t, err := h.repo.Create(model.Task{
+		t, err := repo.Create(model.Task{
 			Title:       in.Title,
 			Description: in.Description,
 			Done:        in.Done,
@@ -117,6 +133,8 @@ func (h *Handler) TasksRoot(w http.ResponseWriter, r *http.Request) {
 
 // /api/tasks/{id}
 func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
+	repo := h.repoForRequest(r)
+
 	tail := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	tail = strings.Trim(tail, "/")
 	if tail == "" {
@@ -131,7 +149,7 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 1 {
 		switch r.Method {
 		case http.MethodGet:
-			t, err := h.repo.Get(model.TaskID(id))
+			t, err := repo.Get(model.TaskID(id))
 			if err == ErrNotFound {
 				writeErr(w, 404, "not found")
 				return
@@ -150,7 +168,7 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			t, err := h.repo.Update(model.TaskID(id), p)
+			t, err := repo.Update(model.TaskID(id), p)
 			if err == ErrTooManyMods {
 				writeErr(w, 400, err.Error())
 				return
@@ -188,7 +206,7 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			if err := h.repo.SetLive(model.TaskID(id), *in.Live); err != nil {
+			if err := repo.SetLive(model.TaskID(id), *in.Live); err != nil {
 				if err == ErrNotFound {
 					writeErr(w, 404, "not found")
 					return
@@ -197,7 +215,7 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			t, err := h.repo.Get(model.TaskID(id))
+			t, err := repo.Get(model.TaskID(id))
 			if err == ErrNotFound {
 				writeErr(w, 404, "not found")
 				return
@@ -220,6 +238,8 @@ func (h *Handler) TasksSub(w http.ResponseWriter, r *http.Request) {
 
 // /api/tasks/live  (batch sync)
 func (h *Handler) TasksLive(w http.ResponseWriter, r *http.Request) {
+	repo := h.repoForRequest(r)
+
 	switch r.Method {
 	case http.MethodPut:
 		var in struct {
@@ -239,7 +259,7 @@ func (h *Handler) TasksLive(w http.ResponseWriter, r *http.Request) {
 			ids = append(ids, model.TaskID(s))
 		}
 
-		if err := h.repo.SyncLive(ids); err != nil {
+		if err := repo.SyncLive(ids); err != nil {
 			writeErr(w, 500, err.Error())
 			return
 		}
