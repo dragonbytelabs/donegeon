@@ -55,9 +55,12 @@ function readCard(state: BoardStateResponse, cardId: string): SerializedCard {
 }
 
 export function applyBoardState(engine: Engine, state: BoardStateResponse): void {
-  const existing = Array.from(engine.stacks.keys());
-  for (const stackId of existing) {
-    engine.removeStack(stackId);
+  const nextIDs = new Set(Object.keys(state.stacks));
+  const existingIDs = Array.from(engine.stacks.keys());
+  for (const stackId of existingIDs) {
+    if (!nextIDs.has(stackId)) {
+      engine.removeStack(stackId);
+    }
   }
 
   const orderedStacks = Object.values(state.stacks).sort((a, b) => a.z - b.z);
@@ -70,10 +73,18 @@ export function applyBoardState(engine: Engine, state: BoardStateResponse): void
     });
     if (!cards.length) continue;
 
-    const stack = new StackEntity(stackData.id, stackData.pos, cards);
-    stack.z[1](stackData.z);
+    const existing = engine.getStack(stackData.id);
+    if (existing) {
+      existing.pos[1]({ ...stackData.pos });
+      existing.z[1](stackData.z);
+      existing.cards[1](cards);
+    } else {
+      const stack = new StackEntity(stackData.id, stackData.pos, cards);
+      stack.z[1](stackData.z);
+      engine.addStack(stack);
+    }
+
     maxZ = Math.max(maxZ, stackData.z);
-    engine.addStack(stack);
   }
 
   const serverVersion = Number.parseInt(state.version, 10);

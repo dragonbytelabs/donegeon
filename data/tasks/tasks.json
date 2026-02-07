@@ -1,0 +1,23 @@
+{
+  "users": {
+    "usr_44815436f58941e7": {
+      "tasks": {
+        "task_6f6f2ab12cea8233": {
+          "id": "task_6f6f2ab12cea8233",
+          "title": "task trash out",
+          "description": "The trash needs to be taken out every thursday",
+          "done": false,
+          "project": "homebase",
+          "tags": [
+            "home",
+            "quick"
+          ],
+          "nextAction": false,
+          "createdAt": "2026-02-06T22:59:12.13306-05:00",
+          "updatedAt": "2026-02-06T22:59:12.13306-05:00"
+        }
+      },
+      "liveIndex": {}
+    }
+  }
+}
