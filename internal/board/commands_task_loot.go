@@ -66,7 +66,14 @@ func (h *Handler) cmdTaskSpawnExisting(state *model.BoardState, taskRepo task.Re
 		"nextAction":  t.NextAction,
 		"recurrence":  t.Recurrence,
 	})
-	stack := state.CreateStack(model.Point{X: x, Y: y}, []model.CardID{card.ID})
+	cardIDs := make([]model.CardID, 0, 6)
+	for _, spec := range buildSpawnModifierSpecs(t) {
+		mod := state.CreateCard(spec.DefID, spec.Data)
+		cardIDs = append(cardIDs, mod.ID)
+	}
+	cardIDs = append(cardIDs, card.ID)
+	stack := state.CreateStack(model.Point{X: x, Y: y}, cardIDs)
+	ensureTaskFaceCard(state, stack)
 
 	if err := taskRepo.SetLive(model.TaskID(taskID), true); err != nil {
 		_, _ = playerRepo.AddLoot(player.LootCoin, player.CostSpawnTaskToBoardCoin)

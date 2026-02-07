@@ -11,28 +11,38 @@
         "card_1"
       ]
     },
-    "stack_11": {
-      "id": "stack_11",
-      "pos": {
-        "x": 666,
-        "y": 420
-      },
-      "z": 21,
-      "cards": [
-        "card_11"
-      ]
-    },
     "stack_16": {
       "id": "stack_16",
       "pos": {
-        "x": 111,
-        "y": 177
+        "x": 155,
+        "y": 155
       },
-      "z": 28,
+      "z": 29,
       "cards": [
-        "card_5",
-        "card_10",
+        "card_10"
+      ]
+    },
+    "stack_17": {
+      "id": "stack_17",
+      "pos": {
+        "x": 309,
+        "y": 397
+      },
+      "z": 33,
+      "cards": [
+        "card_6",
         "card_16"
+      ]
+    },
+    "stack_19": {
+      "id": "stack_19",
+      "pos": {
+        "x": 727,
+        "y": 89
+      },
+      "z": 32,
+      "cards": [
+        "card_17"
       ]
     },
     "stack_2": {
@@ -57,6 +67,17 @@
         "card_3"
       ]
     },
+    "stack_31": {
+      "id": "stack_31",
+      "pos": {
+        "x": 485,
+        "y": 111
+      },
+      "z": 45,
+      "cards": [
+        "card_29"
+      ]
+    },
     "stack_4": {
       "id": "stack_4",
       "pos": {
@@ -68,26 +89,92 @@
         "card_4"
       ]
     },
-    "stack_6": {
-      "id": "stack_6",
+    "stack_40": {
+      "id": "stack_40",
       "pos": {
-        "x": 420,
-        "y": 200
+        "x": 309,
+        "y": 155
       },
-      "z": 16,
+      "z": 54,
       "cards": [
-        "card_6"
+        "card_5"
       ]
     },
-    "stack_9": {
-      "id": "stack_9",
+    "stack_42": {
+      "id": "stack_42",
+      "pos": {
+        "x": 519,
+        "y": 237
+      },
+      "z": 56,
+      "cards": [
+        "card_39"
+      ]
+    },
+    "stack_43": {
+      "id": "stack_43",
       "pos": {
         "x": 628,
         "y": 266
       },
-      "z": 19,
+      "z": 57,
       "cards": [
-        "card_9"
+        "card_40"
+      ]
+    },
+    "stack_44": {
+      "id": "stack_44",
+      "pos": {
+        "x": 686,
+        "y": 338
+      },
+      "z": 58,
+      "cards": [
+        "card_41"
+      ]
+    },
+    "stack_45": {
+      "id": "stack_45",
+      "pos": {
+        "x": 666,
+        "y": 420
+      },
+      "z": 59,
+      "cards": [
+        "card_42"
+      ]
+    },
+    "stack_49": {
+      "id": "stack_49",
+      "pos": {
+        "x": 352,
+        "y": 338
+      },
+      "z": 63,
+      "cards": [
+        "card_46"
+      ]
+    },
+    "stack_50": {
+      "id": "stack_50",
+      "pos": {
+        "x": 410,
+        "y": 266
+      },
+      "z": 64,
+      "cards": [
+        "card_47"
+      ]
+    },
+    "stack_51": {
+      "id": "stack_51",
+      "pos": {
+        "x": 111,
+        "y": 353
+      },
+      "z": 65,
+      "cards": [
+        "card_48"
       ]
     }
   },
@@ -100,30 +187,93 @@
       "id": "card_10",
       "defId": "mod.recurring"
     },
-    "card_11": {
-      "id": "card_11",
-      "defId": "resource.berry_bush"
-    },
     "card_16": {
       "id": "card_16",
       "defId": "task.instance",
       "data": {
-        "assignedVillagerId": "stack_5",
-        "description": "asdf",
-        "title": "asdf"
+        "assignedVillagerId": "stack_6",
+        "description": "first",
+        "title": "first"
+      }
+    },
+    "card_17": {
+      "id": "card_17",
+      "defId": "task.instance",
+      "data": {
+        "description": "",
+        "done": false,
+        "dueDate": null,
+        "modifiers": [],
+        "nextAction": false,
+        "project": "inbox",
+        "recurrence": null,
+        "tags": [],
+        "taskId": "task_a4f82953f66feb72",
+        "title": "tobaord"
       }
     },
     "card_2": {
       "id": "card_2",
       "defId": "deck.collect"
     },
+    "card_29": {
+      "id": "card_29",
+      "defId": "mod.next_action"
+    },
     "card_3": {
       "id": "card_3",
       "defId": "deck.organization"
     },
+    "card_39": {
+      "id": "card_39",
+      "defId": "mod.recurring"
+    },
     "card_4": {
       "id": "card_4",
       "defId": "deck.survival"
+    },
+    "card_40": {
+      "id": "card_40",
+      "defId": "task.blank"
+    },
+    "card_41": {
+      "id": "card_41",
+      "defId": "task.blank"
+    },
+    "card_42": {
+      "id": "card_42",
+      "defId": "mod.deadline_pin"
+    },
+    "card_46": {
+      "id": "card_46",
+      "defId": "mod.deadline_pin"
+    },
+    "card_47": {
+      "id": "card_47",
+      "defId": "mod.next_action"
+    },
+    "card_48": {
+      "id": "card_48",
+      "defId": "task.instance",
+      "data": {
+        "description": "sample",
+        "done": false,
+        "dueDate": "2026-02-25",
+        "modifiers": [],
+        "nextAction": false,
+        "project": "another",
+        "recurrence": {
+          "type": "daily",
+          "interval": 4
+        },
+        "tags": [
+          "a",
+          "b",
+          "c"
+        ],
+        "taskId": "task_52ecdfc4fbdc732e",
+        "title": "sample"
+      }
     },
     "card_5": {
       "id": "card_5",
@@ -138,13 +288,9 @@
       "data": {
         "name": "Pip"
       }
-    },
-    "card_9": {
-      "id": "card_9",
-      "defId": "resource.berry_bush"
     }
   },
-  "nextZ": 28,
+  "nextZ": 65,
   "pan": {
     "x": 0,
     "y": 0

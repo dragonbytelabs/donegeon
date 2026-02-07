@@ -3,16 +3,16 @@
     "usr_838f48afd4fb1a61": {
       "loot": {
         "blueprint_shard": 0,
-        "coin": 4,
+        "coin": 1,
         "gear": 0,
         "ink": 0,
         "paper": 0,
-        "parts": 1
+        "parts": 15
       },
       "unlocks": {
-        "task.due_date": false,
+        "task.due_date": true,
         "task.next_action": false,
-        "task.recurrence": false
+        "task.recurrence": true
       }
     }
   }

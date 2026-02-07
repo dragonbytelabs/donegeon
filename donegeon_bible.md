@@ -148,6 +148,22 @@ We do **not** modify `templ.md`; we only copy/compose blocks in our app and adju
 
 The backend must enforce these; the frontend may only display hints.
 
+### Modifier consumption reference
+- Source of truth: `donegeon_config.yml` -> `modifiers.types[].charges`.
+- Rule fields:
+  - `mode` (`finite` | `infinite`)
+  - `max_charges`
+  - `consume_on` (e.g. `task_complete`, `task_process`, `day_tick`)
+  - `spent_behavior` (`remove` | `salvageable` | `persist_spent`)
+- Current single-use on task completion:
+  - `next_action` (`finite`, `max_charges: 1`, consumes on `task_complete`, spent behavior `remove`)
+- Current multi-use / persistent examples:
+  - `deadline_pin` (infinite, no consume events)
+  - `recurring_contract` (finite 4, consumes over multiple events)
+  - `importance_seal` (finite 3)
+  - `schedule_token` (finite 2, process-time consumption)
+  - `context_filter` (finite 5, process-time consumption)
+
 ---
 
 ## 8) Decision log

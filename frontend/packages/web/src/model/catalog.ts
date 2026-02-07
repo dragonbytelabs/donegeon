@@ -91,6 +91,14 @@ export const donegeonDefs = {
         skin: "sl-kind-food",
         leftBadge: "MOD",
     },
+    "mod.recurring_contract": {
+        id: "mod.recurring_contract",
+        kind: "modifier",
+        title: "Recurring Contract",
+        icon: "🧾",
+        skin: "sl-kind-food",
+        leftBadge: "MOD",
+    },
     "mod.deadline_pin": {
         id: "mod.deadline_pin",
         kind: "modifier",
@@ -106,6 +114,98 @@ export const donegeonDefs = {
         icon: "⚠️",
         skin: "sl-kind-quest",
         leftBadge: "MOD",
+    },
+    "mod.context_filter": {
+        id: "mod.context_filter",
+        kind: "modifier",
+        title: "Context Filter",
+        icon: "🏷️",
+        skin: "sl-kind-stone",
+        leftBadge: "MOD",
+    },
+    "mod.importance_seal": {
+        id: "mod.importance_seal",
+        kind: "modifier",
+        title: "Importance Seal",
+        icon: "📌",
+        skin: "sl-kind-coin",
+        leftBadge: "MOD",
+    },
+    "mod.schedule_token": {
+        id: "mod.schedule_token",
+        kind: "modifier",
+        title: "Schedule Token",
+        icon: "🗓️",
+        skin: "sl-kind-wood",
+        leftBadge: "MOD",
+    },
+
+    // -------------------------
+    // Resources
+    // -------------------------
+    "resource.berry_bush": {
+        id: "resource.berry_bush",
+        kind: "resource",
+        title: "Berry Bush",
+        icon: "🫐",
+        skin: "sl-kind-food",
+        leftBadge: "RES",
+    },
+    "resource.mushroom_patch": {
+        id: "resource.mushroom_patch",
+        kind: "resource",
+        title: "Mushroom Patch",
+        icon: "🍄",
+        skin: "sl-kind-food",
+        leftBadge: "RES",
+    },
+    "resource.scrap_pile": {
+        id: "resource.scrap_pile",
+        kind: "resource",
+        title: "Scrap Pile",
+        icon: "🧱",
+        skin: "sl-kind-stone",
+        leftBadge: "RES",
+    },
+
+    // -------------------------
+    // Food
+    // -------------------------
+    "food.berries": {
+        id: "food.berries",
+        kind: "food",
+        title: "Berries",
+        icon: "🫐",
+        skin: "sl-kind-food",
+        leftBadge: "FOOD",
+    },
+    "food.mushroom": {
+        id: "food.mushroom",
+        kind: "food",
+        title: "Mushroom",
+        icon: "🍄",
+        skin: "sl-kind-food",
+        leftBadge: "FOOD",
+    },
+    "food.bread": {
+        id: "food.bread",
+        kind: "food",
+        title: "Bread",
+        icon: "🍞",
+        skin: "sl-kind-food",
+        leftBadge: "FOOD",
+    },
+
+    // -------------------------
+    // Zombies
+    // -------------------------
+    "zombie.default_zombie": {
+        id: "zombie.default_zombie",
+        kind: "zombie",
+        title: "Zombie",
+        icon: "🧟",
+        skin: "sl-kind-quest",
+        leftBadge: "FOE",
     },
 
     // -------------------------

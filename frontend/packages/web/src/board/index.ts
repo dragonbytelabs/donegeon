@@ -6,8 +6,8 @@ import { applyPan } from "./pan";
 import { openTaskModal } from "./taskModal";
 import { scheduleLiveSync } from "./liveSync";
 import { scheduleSave } from "./storage";
-import { applyBoardState, cmdBoardSeedDefault, fetchBoardState } from "./api";
-import { loadInventory } from "./inventory";
+import { applyBoardState, cmdBoardSeedDefault, cmdWorldEndDay, fetchBoardState, reloadBoard } from "./api";
+import { loadInventory, refreshInventory } from "./inventory";
 
 // Get bottom deck row Y position based on viewport
 function getDeckRowY(): number {
@@ -39,6 +39,48 @@ function setupGoalsMenu() {
   backdrop.addEventListener("click", closeMenu);
 }
 
+function setupHeaderActions(engine: Engine) {
+  const endDayBtn = document.getElementById("endDayBtn") as HTMLButtonElement | null;
+  const refreshBtn = document.getElementById("boardRefreshBtn") as HTMLButtonElement | null;
+
+  const setBusy = (btn: HTMLButtonElement | null, busy: boolean, busyText: string, idleText: string) => {
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.textContent = busy ? busyText : idleText;
+    btn.classList.toggle("opacity-60", busy);
+    btn.classList.toggle("cursor-not-allowed", busy);
+  };
+
+  refreshBtn?.addEventListener("click", () => {
+    setBusy(refreshBtn, true, "Refreshing...", "Refresh");
+    void reloadBoard(engine)
+      .then(() => refreshInventory())
+      .then(() => {
+        scheduleLiveSync(engine);
+      })
+      .finally(() => {
+        setBusy(refreshBtn, false, "Refreshing...", "Refresh");
+      });
+  });
+
+  endDayBtn?.addEventListener("click", () => {
+    setBusy(endDayBtn, true, "Ending...", "End Day");
+    void cmdWorldEndDay()
+      .then(() => reloadBoard(engine))
+      .then(() => refreshInventory())
+      .then(() => {
+        scheduleLiveSync(engine);
+        window.dispatchEvent(new Event("donegeon:force-refresh-goals"));
+      })
+      .catch((err) => {
+        console.warn("end day failed", err);
+      })
+      .finally(() => {
+        setBusy(endDayBtn, false, "Ending...", "End Day");
+      });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const boardRoot = document.getElementById("boardRoot")!;
   const boardEl = document.getElementById("board")!;
@@ -57,6 +99,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   mountBoard(engine, boardEl);
   initShell(engine, boardRoot);
+  setupHeaderActions(engine);
   bindMobilePan(boardRoot, boardEl);
   bindBoardInput(engine, boardRoot, boardEl);
   bindLongPressMenu(engine, boardRoot);

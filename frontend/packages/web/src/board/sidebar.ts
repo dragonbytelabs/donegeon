@@ -350,6 +350,9 @@ export function initShell(engine: Engine, boardRoot: HTMLElement) {
   });
 
   engine.events.on(() => scheduleRemoteRefresh());
+  window.addEventListener("donegeon:force-refresh-goals", () => {
+    void refreshRemote();
+  });
   window.setInterval(() => {
     void refreshRemote();
   }, REMOTE_REFRESH_MS);

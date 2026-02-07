@@ -140,7 +140,10 @@ const listEl = qs("tasksList") as HTMLDivElement;
 const rowTpl = qs("taskRowTpl") as HTMLTemplateElement;
 
 const newBtn = qs("taskNewBtn") as HTMLButtonElement;
+const priorPlayerEl = document.getElementById("tasksLootInline");
+if (priorPlayerEl) priorPlayerEl.remove();
 const playerEl = document.createElement("div");
+playerEl.id = "tasksLootInline";
 playerEl.className = "text-sm opacity-80";
 playerEl.textContent = "🪙 0";
 countEl.parentElement?.insertBefore(playerEl, countEl);

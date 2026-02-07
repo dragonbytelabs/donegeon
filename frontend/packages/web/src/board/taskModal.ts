@@ -4,7 +4,7 @@ import { donegeonDefs } from "../model/catalog";
 import type { TaskDTO, ModifierSchema, ModalRefs, TaskModifierSlotDTO } from "../model/types";
 import { updateCard } from "./immut";
 import { scheduleLiveSync } from "./liveSync";
-import { sendCommand } from "./api";
+import { cmdTaskCompleteStack, cmdTaskSetTaskID, reloadBoard, sendCommand } from "./api";
 
 function schemaFromModifiers(mods: TaskModifierSlotDTO[]): ModifierSchema {
   let showDueDate = false
@@ -84,13 +84,26 @@ async function apiGetTask(id: string): Promise<TaskDTO> {
   return res.json();
 }
 
+async function parseTaskAPIError(res: Response, fallback: string): Promise<never> {
+  let msg = fallback;
+  try {
+    const data = await res.json();
+    if (data && typeof data.error === "string" && data.error.trim() !== "") {
+      msg = data.error;
+    }
+  } catch {
+    // keep fallback
+  }
+  throw new Error(msg);
+}
+
 async function apiCreateTask(input: Omit<TaskDTO, "id">): Promise<TaskDTO> {
   const res = await fetch(`/api/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) throw new Error(`POST /api/tasks failed: ${res.status}`);
+  if (!res.ok) await parseTaskAPIError(res, `POST /api/tasks failed: ${res.status}`);
   return res.json();
 }
 
@@ -100,8 +113,110 @@ async function apiPatchTask(id: string, patch: Partial<Omit<TaskDTO, "id">>): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
-  if (!res.ok) throw new Error(`PATCH /api/tasks/${id} failed: ${res.status}`);
+  if (!res.ok) await parseTaskAPIError(res, `PATCH /api/tasks/${id} failed: ${res.status}`);
   return res.json();
+}
+
+function parseLockedFeature(message: string): string | null {
+  const prefix = "feature locked:";
+  const idx = message.indexOf(prefix);
+  if (idx < 0) return null;
+  return message.slice(idx + prefix.length).trim();
+}
+
+function withLockedFeatureRemoved(
+  payload: Omit<TaskDTO, "id">,
+  lockedFeature: string
+): Omit<TaskDTO, "id"> {
+  switch (lockedFeature) {
+    case "task.due_date":
+      return { ...payload, dueDate: undefined };
+    case "task.next_action":
+      return { ...payload, nextAction: false };
+    case "task.recurrence":
+      return { ...payload, recurrence: undefined };
+    default:
+      return payload;
+  }
+}
+
+async function saveTaskWithLockFallback(
+  existingTaskID: string | undefined,
+  payload: Omit<TaskDTO, "id">
+): Promise<TaskDTO> {
+  let req = { ...payload };
+  let lastErr: unknown = null;
+
+  for (let i = 0; i < 4; i++) {
+    try {
+      if (existingTaskID) return await apiPatchTask(existingTaskID, req);
+      return await apiCreateTask(req);
+    } catch (e: any) {
+      lastErr = e;
+      const msg = String(e?.message ?? e);
+      const lockedFeature = parseLockedFeature(msg);
+      if (!lockedFeature) throw e;
+
+      const nextReq = withLockedFeatureRemoved(req, lockedFeature);
+      const changed =
+        nextReq.dueDate !== req.dueDate ||
+        nextReq.nextAction !== req.nextAction ||
+        JSON.stringify(nextReq.recurrence ?? null) !== JSON.stringify(req.recurrence ?? null);
+      if (!changed) throw e;
+
+      req = nextReq;
+    }
+  }
+
+  throw lastErr ?? new Error("task save failed");
+}
+
+function modelFromCardData(data: any, mods: TaskModifierSlotDTO[]): Omit<TaskDTO, "id"> {
+  const rec = data?.recurrence;
+  const recurrence =
+    rec &&
+    typeof rec === "object" &&
+    typeof rec.type === "string" &&
+    rec.type.trim() !== "" &&
+    Number(rec.interval) > 0
+      ? {
+          type: rec.type,
+          interval: Number(rec.interval),
+        }
+      : undefined;
+
+  return {
+    title: typeof data?.title === "string" ? data.title : "",
+    description: typeof data?.description === "string" ? data.description : "",
+    done: !!data?.done,
+    project: typeof data?.project === "string" ? data.project : "",
+    tags: Array.isArray(data?.tags) ? data.tags.filter((t: any) => typeof t === "string") : [],
+    modifiers: mods,
+    dueDate: typeof data?.dueDate === "string" && data.dueDate.trim() !== "" ? data.dueDate : undefined,
+    nextAction: !!data?.nextAction,
+    recurrence,
+  };
+}
+
+function mergeTaskOverCard(
+  base: Omit<TaskDTO, "id">,
+  taskModel: TaskDTO,
+  mods: TaskModifierSlotDTO[]
+): Omit<TaskDTO, "id"> {
+  return {
+    title: taskModel.title && taskModel.title.trim() !== "" ? taskModel.title : base.title,
+    description:
+      taskModel.description && taskModel.description.trim() !== ""
+        ? taskModel.description
+        : base.description,
+    done: !!taskModel.done,
+    project: taskModel.project ?? base.project,
+    tags: Array.isArray(taskModel.tags) && taskModel.tags.length > 0 ? taskModel.tags : base.tags,
+    modifiers: mods,
+    dueDate: taskModel.dueDate ?? base.dueDate,
+    nextAction: taskModel.nextAction || base.nextAction,
+    recurrence: taskModel.recurrence ?? base.recurrence,
+  };
 }
 
 let refs: ModalRefs | null = null;
@@ -206,15 +321,22 @@ function ensureModalMounted() {
       },
     });
 
-    console.log("SAVE payload:", next, JSON.stringify(next));
-
     try {
-      let saved: TaskDTO;
+      // Persist core text fields to board first so reopen/refresh retains edits
+      // even when task API rejects locked fields.
+      await sendCommand("task.set_title", {
+        taskCardId: ctx.cardId,
+        title: next.title ?? "",
+      });
+      await sendCommand("task.set_description", {
+        taskCardId: ctx.cardId,
+        description: next.description ?? "",
+      });
+
+      const saved = await saveTaskWithLockFallback(ctx.existingTaskId, next);
 
       if (!ctx.existingTaskId) {
-        saved = await apiCreateTask(next);
-
-        // ✅ promote def + write all fields immutably (def is readonly)
+        // promote def + write all fields immutably (def is readonly)
         updateCard(ctx.engine, ctx.stackId, ctx.cardId, {
           nextDef: (donegeonDefs as any)["task.instance"],
           recipe(d) {
@@ -237,8 +359,6 @@ function ensureModalMounted() {
         // keep ctx updated if you hit Save again while modal stays open
         ctx.existingTaskId = saved.id;
       } else {
-        saved = await apiPatchTask(ctx.existingTaskId, next);
-
         updateCard(ctx.engine, ctx.stackId, ctx.cardId, {
           recipe(d) {
             d.title = saved.title;
@@ -257,15 +377,12 @@ function ensureModalMounted() {
         });
       }
 
-      // Persist board card fields in server board state so refresh keeps task card contents.
-      await sendCommand("task.set_title", {
-        taskCardId: ctx.cardId,
-        title: saved.title ?? "",
-      });
-      await sendCommand("task.set_description", {
-        taskCardId: ctx.cardId,
-        description: saved.description ?? "",
-      });
+      await cmdTaskSetTaskID(ctx.cardId, saved.id);
+
+      if (saved.done) {
+        await cmdTaskCompleteStack(ctx.stackId);
+        await reloadBoard(ctx.engine);
+      }
 
       scheduleLiveSync(ctx.engine);
 
@@ -292,32 +409,12 @@ export async function openTaskModal(opts: { engine: Engine; stackId: string; car
   const data = (face.data ?? {}) as any;
   const existingTaskId = data.taskId as string | undefined;
 
-  let model: Omit<TaskDTO, "id"> = {
-    title: "",
-    description: "",
-    done: false,
-    project: "",
-    tags: [],
-    modifiers: mods,
-    dueDate: undefined,
-    nextAction: false,
-    recurrence: undefined,
-  };
+  let model: Omit<TaskDTO, "id"> = modelFromCardData(data, mods);
 
   if (existingTaskId) {
     try {
       const t = await apiGetTask(existingTaskId);
-      model = {
-        title: t.title ?? "",
-        description: t.description ?? "",
-        done: !!t.done,
-        project: t.project ?? "",
-        tags: t.tags ?? [],
-        modifiers: mods,
-        dueDate: t.dueDate,
-        nextAction: !!t.nextAction,
-        recurrence: t.recurrence,
-      };
+      model = mergeTaskOverCard(model, t, mods);
     } catch {
       if (data.draft) model = { ...model, ...data.draft };
     }

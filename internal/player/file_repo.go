@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -224,6 +225,64 @@ func (r *FileRepo) SpendVillagerStamina(villagerID string, cost, maxStamina int)
 		return false, cur, UserState{}, err
 	}
 	return true, cur, cloneUserState(us), nil
+}
+
+func (r *FileRepo) ResetVillagerStamina(villagerIDs []string, maxStamina int, mode string) (UserState, error) {
+	if maxStamina <= 0 {
+		maxStamina = 6
+	}
+
+	ids := make([]string, 0, len(villagerIDs))
+	seen := map[string]bool{}
+	for _, id := range villagerIDs {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+
+	us := r.userStateLocked()
+	next := map[string]int{}
+
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = "full"
+	}
+
+	partialGain := maxStamina / 2
+	if partialGain <= 0 {
+		partialGain = 1
+	}
+
+	for _, id := range ids {
+		cur, ok := us.VillagerStamina[id]
+		if !ok {
+			cur = maxStamina
+		}
+		switch mode {
+		case "partial":
+			cur += partialGain
+			if cur > maxStamina {
+				cur = maxStamina
+			}
+		default:
+			cur = maxStamina
+		}
+		next[id] = cur
+	}
+
+	us.VillagerStamina = next
+	r.store.s.Users[r.userID] = us
+	if err := r.store.saveLocked(); err != nil {
+		return UserState{}, err
+	}
+	return cloneUserState(us), nil
 }
 
 func (r *FileRepo) BuildStateResponse() StateResponse {

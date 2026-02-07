@@ -281,10 +281,18 @@ func (h *Handler) executeCommand(state *model.BoardState, taskRepo task.Repo, pl
 		return h.cmdTaskSetTitle(state, taskRepo, args)
 	case "task.set_description":
 		return h.cmdTaskSetDescription(state, taskRepo, args)
+	case "task.set_task_id":
+		return h.cmdTaskSetTaskID(state, taskRepo, args)
 	case "task.add_modifier":
 		return h.cmdTaskAddModifier(state, args)
 	case "task.assign_villager":
 		return h.cmdTaskAssignVillager(state, taskRepo, args)
+	case "task.complete_stack":
+		return h.cmdTaskCompleteStack(state, taskRepo, args)
+	case "world.end_day":
+		return h.cmdWorldEndDay(state, taskRepo, playerRepo, args)
+	case "zombie.clear":
+		return h.cmdZombieClear(state, playerRepo, args)
 	case "loot.collect_stack":
 		return h.cmdLootCollectStack(state, taskRepo, playerRepo, args)
 	default:

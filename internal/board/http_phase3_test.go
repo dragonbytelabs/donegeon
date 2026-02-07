@@ -74,10 +74,20 @@ func TestCommand_TaskSpawnExistingConsumesCoinAndMarksLive(t *testing.T) {
 
 	taskRepo := task.NewMemoryRepo()
 	inbox := "inbox"
+	due := "2026-02-12"
 	created, err := taskRepo.Create(model.Task{
 		Title:       "Laundry",
 		Description: "Do laundry",
 		Project:     &inbox,
+		DueDate:     &due,
+		NextAction:  true,
+		Recurrence: &model.Recurrence{
+			Type:     "weekly",
+			Interval: 1,
+		},
+		Modifiers: []model.TaskModifierSlot{
+			{DefID: "mod.context_filter", Data: map[string]any{}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("create task: %v", err)
@@ -95,17 +105,53 @@ func TestCommand_TaskSpawnExistingConsumesCoinAndMarksLive(t *testing.T) {
 	}
 
 	var found bool
+	var spawnedStack *model.Stack
 	for _, c := range state.Cards {
 		if c.DefID != "task.instance" {
 			continue
 		}
 		if got, _ := c.Data["taskId"].(string); got == string(created.ID) {
 			found = true
+			for _, s := range state.Stacks {
+				for _, cid := range s.Cards {
+					if cid == c.ID {
+						spawnedStack = s
+						break
+					}
+				}
+				if spawnedStack != nil {
+					break
+				}
+			}
 			break
 		}
 	}
 	if !found {
 		t.Fatalf("expected spawned task.instance card linked to task %s", created.ID)
+	}
+	if spawnedStack == nil {
+		t.Fatalf("expected spawned stack containing task card")
+	}
+
+	defs := map[model.CardDefID]bool{}
+	for _, cid := range spawnedStack.Cards {
+		c := state.GetCard(cid)
+		if c == nil {
+			continue
+		}
+		defs[c.DefID] = true
+	}
+	if !defs["mod.deadline_pin"] {
+		t.Fatalf("expected due-date task to spawn with deadline pin modifier card")
+	}
+	if !defs["mod.recurring"] && !defs["mod.recurring_contract"] {
+		t.Fatalf("expected recurring task to spawn with recurrence modifier card")
+	}
+	if !defs["mod.next_action"] {
+		t.Fatalf("expected next-action task to spawn with next action modifier card")
+	}
+	if !defs["mod.context_filter"] {
+		t.Fatalf("expected explicit task modifiers to be represented on board stack")
 	}
 
 	wallet := playerRepo.GetState()
@@ -120,6 +166,51 @@ func TestCommand_TaskSpawnExistingConsumesCoinAndMarksLive(t *testing.T) {
 	}
 	if len(liveTasks) != 1 || liveTasks[0].ID != created.ID {
 		t.Fatalf("expected spawned task to be marked live")
+	}
+}
+
+func TestCommand_TaskSetTaskIDMarksLive(t *testing.T) {
+	h, _ := newTestBoardHandler()
+	state := model.NewBoardState()
+
+	card := state.CreateCard("task.blank", map[string]any{
+		"title":       "From board",
+		"description": "Needs link",
+	})
+	_ = state.CreateStack(model.Point{X: 240, Y: 240}, []model.CardID{card.ID})
+
+	inbox := "inbox"
+	created, err := h.taskRepo.Create(model.Task{
+		Title:       "From board",
+		Description: "Needs link",
+		Project:     &inbox,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	if _, err := h.executeCommand(state, h.taskRepo, nil, "task.set_task_id", map[string]any{
+		"taskCardId": string(card.ID),
+		"taskId":     string(created.ID),
+	}); err != nil {
+		t.Fatalf("task.set_task_id: %v", err)
+	}
+
+	updated := state.GetCard(card.ID)
+	if updated == nil {
+		t.Fatalf("expected task card to still exist")
+	}
+	if got, _ := updated.Data["taskId"].(string); got != string(created.ID) {
+		t.Fatalf("expected taskId to be linked on card data, got %q", got)
+	}
+
+	live := true
+	liveTasks, err := h.taskRepo.List(task.ListFilter{Live: &live})
+	if err != nil {
+		t.Fatalf("list live tasks: %v", err)
+	}
+	if len(liveTasks) != 1 || liveTasks[0].ID != created.ID {
+		t.Fatalf("expected linked task to be marked live")
 	}
 }
 
@@ -199,6 +290,100 @@ func TestCommand_TaskAssignVillager_PreservesReceiverPosition(t *testing.T) {
 	}
 	if state.GetStack(villagerStack.ID) != nil {
 		t.Fatalf("expected villager source stack to be removed after merge")
+	}
+}
+
+func TestCommand_TaskCompleteStack_RemovesTaskAndSingleUseButKeepsVillager(t *testing.T) {
+	taskRepo := task.NewMemoryRepo()
+	cfg := testBoardConfig()
+	cfg.Tasks = config.Tasks{
+		Processing: config.TaskProcessing{
+			CompletionRequiresAssignedVillager: true,
+		},
+	}
+	cfg.Modifiers.Types = []config.ModifierType{
+		{
+			ID: "next_action",
+			Charges: config.ModifierCharges{
+				Mode:       "finite",
+				MaxCharges: 1,
+				ConsumeOn:  []string{"task_complete"},
+			},
+		},
+		{
+			ID: "deadline_pin",
+			Charges: config.ModifierCharges{
+				Mode:       "infinite",
+				MaxCharges: 0,
+				ConsumeOn:  []string{},
+			},
+		},
+	}
+	h := NewHandler(NewMemoryRepo(), taskRepo, cfg)
+	state := model.NewBoardState()
+
+	inbox := "inbox"
+	created, err := taskRepo.Create(model.Task{
+		Title:   "Trash",
+		Project: &inbox,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if err := taskRepo.SetLive(created.ID, true); err != nil {
+		t.Fatalf("set live: %v", err)
+	}
+
+	villager := state.CreateCard("villager.basic", map[string]any{"name": "Pip"})
+	nextAction := state.CreateCard("mod.next_action", nil)
+	deadline := state.CreateCard("mod.deadline_pin", nil)
+	taskCard := state.CreateCard("task.instance", map[string]any{
+		"taskId": string(created.ID),
+		"title":  "Trash",
+	})
+	stack := state.CreateStack(model.Point{X: 300, Y: 300}, []model.CardID{
+		villager.ID,
+		nextAction.ID,
+		deadline.ID,
+		taskCard.ID,
+	})
+
+	if _, err := h.executeCommand(state, taskRepo, nil, "task.complete_stack", map[string]any{
+		"stackId": string(stack.ID),
+	}); err != nil {
+		t.Fatalf("task.complete_stack: %v", err)
+	}
+
+	if state.GetStack(stack.ID) != nil {
+		t.Fatalf("expected original completed stack to be removed")
+	}
+	if state.GetCard(taskCard.ID) != nil {
+		t.Fatalf("expected task card to be removed from board")
+	}
+	if state.GetCard(nextAction.ID) != nil {
+		t.Fatalf("expected single-use next action modifier to be removed")
+	}
+	if state.GetCard(villager.ID) == nil {
+		t.Fatalf("expected villager card to remain on board")
+	}
+	if state.GetCard(deadline.ID) == nil {
+		t.Fatalf("expected persistent deadline pin modifier to remain on board")
+	}
+
+	updatedTask, err := taskRepo.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get completed task: %v", err)
+	}
+	if !updatedTask.Done {
+		t.Fatalf("expected completed task to be marked done")
+	}
+	live := true
+	liveTasks, err := taskRepo.List(task.ListFilter{Live: &live})
+	if err != nil {
+		t.Fatalf("list live tasks: %v", err)
+	}
+	if len(liveTasks) != 0 {
+		t.Fatalf("expected completed task to be removed from live index")
 	}
 }
 

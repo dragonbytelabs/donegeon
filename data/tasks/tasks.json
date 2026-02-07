@@ -2,18 +2,83 @@
   "users": {
     "usr_838f48afd4fb1a61": {
       "tasks": {
-        "task_b7339b589de4f852": {
-          "id": "task_b7339b589de4f852",
-          "title": "asdf",
-          "description": "asdf",
+        "task_370cf46af5285409": {
+          "id": "task_370cf46af5285409",
+          "title": "first",
+          "description": "first",
+          "done": true,
+          "project": "inbox",
+          "nextAction": false,
+          "createdAt": "2026-02-07T00:34:03.325311-05:00",
+          "updatedAt": "2026-02-07T00:34:03.325311-05:00"
+        },
+        "task_52ecdfc4fbdc732e": {
+          "id": "task_52ecdfc4fbdc732e",
+          "title": "sample",
+          "description": "sample",
+          "done": false,
+          "project": "another",
+          "tags": [
+            "a",
+            "b",
+            "c"
+          ],
+          "dueDate": "2026-02-25",
+          "nextAction": false,
+          "recurrence": {
+            "type": "daily",
+            "interval": 4
+          },
+          "createdAt": "2026-02-07T00:39:57.365567-05:00",
+          "updatedAt": "2026-02-07T00:39:57.365567-05:00"
+        },
+        "task_5c20cc7954f60154": {
+          "id": "task_5c20cc7954f60154",
+          "title": "first",
+          "description": "first",
+          "done": true,
+          "project": "inbox",
+          "nextAction": false,
+          "createdAt": "2026-02-07T00:34:12.860631-05:00",
+          "updatedAt": "2026-02-07T00:34:12.860631-05:00"
+        },
+        "task_6301a85037130481": {
+          "id": "task_6301a85037130481",
+          "title": "first",
+          "description": "first",
+          "done": false,
+          "project": "home",
+          "tags": [
+            "home",
+            "another"
+          ],
+          "modifiers": [
+            {
+              "defId": "mod.recurring"
+            },
+            {
+              "defId": "mod.next_action"
+            }
+          ],
+          "nextAction": false,
+          "createdAt": "2026-02-07T00:32:48.86962-05:00",
+          "updatedAt": "2026-02-07T00:32:48.86962-05:00"
+        },
+        "task_a4f82953f66feb72": {
+          "id": "task_a4f82953f66feb72",
+          "title": "tobaord",
+          "description": "",
           "done": false,
           "project": "inbox",
           "nextAction": false,
-          "createdAt": "2026-02-07T00:06:45.927145-05:00",
-          "updatedAt": "2026-02-07T00:06:45.927145-05:00"
+          "createdAt": "2026-02-07T00:33:31.277636-05:00",
+          "updatedAt": "2026-02-07T00:33:31.277636-05:00"
         }
       },
-      "liveIndex": {}
+      "liveIndex": {
+        "task_52ecdfc4fbdc732e": true,
+        "task_a4f82953f66feb72": true
+      }
     }
   }
 }

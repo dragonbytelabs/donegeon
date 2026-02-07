@@ -192,6 +192,22 @@ export function cmdTaskAssignVillager(taskStackId: string, villagerStackId: stri
   return sendCommand("task.assign_villager", { taskStackId, villagerStackId, targetStackId });
 }
 
+export function cmdTaskSetTaskID(taskCardId: string, taskId: string) {
+  return sendCommand("task.set_task_id", { taskCardId, taskId });
+}
+
+export function cmdTaskCompleteStack(stackId: string) {
+  return sendCommand("task.complete_stack", { stackId });
+}
+
+export function cmdZombieClear(zombieStackId: string, villagerStackId: string, targetStackId?: string) {
+  return sendCommand("zombie.clear", { zombieStackId, villagerStackId, targetStackId });
+}
+
+export function cmdWorldEndDay() {
+  return sendCommand("world.end_day", {});
+}
+
 export function cmdBoardSeedDefault(deckRowY: number) {
   return sendCommand("board.seed_default", { deckRowY });
 }

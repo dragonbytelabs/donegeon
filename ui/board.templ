@@ -54,13 +54,13 @@ templ Board(boardConfig config.BoardUIConfig) {
 
 			<!-- Action buttons -->
 			<div class="flex items-center gap-2">
-				<button class="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/20">
+				<button id="endDayBtn" type="button" class="rounded-md border border-red-500/50 bg-red-500/10 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/20">
 					End Day
 				</button>
-				<button class="rounded-md border border-border bg-card px-3 py-1 text-xs hover:bg-accent">
+				<button id="boardRefreshBtn" type="button" class="rounded-md border border-border bg-card px-3 py-1 text-xs hover:bg-accent">
 					Refresh
 				</button>
-				<button class="rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent">
+				<button type="button" class="rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent">
 					?
 				</button>
 			</div>

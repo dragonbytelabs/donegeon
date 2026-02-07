@@ -7,6 +7,9 @@ export type DonegeonCardKind =
   | "task"
   | "modifier"
   | "loot"
+  | "resource"
+  | "food"
+  | "zombie"
 ;
 
 export type DonegeonCardDef = CardDef<DonegeonCardKind>;

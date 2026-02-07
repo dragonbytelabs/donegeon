@@ -12,6 +12,7 @@ import {
   cmdStackMove,
   cmdStackSplit,
   cmdTaskAssignVillager,
+  cmdZombieClear,
   reloadBoard,
 } from "./api";
 import { isCollectableLoot, refreshInventory } from "./inventory";
@@ -469,6 +470,8 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
         const sourceHasTask = stackHasKind(sourceStack, "task");
         const targetHasVillager = stackHasKind(targetStack, "villager");
         const sourceHasVillager = stackHasKind(sourceStack, "villager");
+        const targetHasZombie = stackHasKind(targetStack, "zombie");
+        const sourceHasZombie = stackHasKind(sourceStack, "zombie");
 
         if ((targetHasTask && sourceHasVillager) || (sourceHasTask && targetHasVillager)) {
           const taskStackId = targetHasTask ? target : ended.stackId;
@@ -479,6 +482,20 @@ function bindBoardInput(engine: Engine, boardRoot: HTMLElement, boardEl: HTMLEle
             .then(() => refreshInventory())
             .catch((err) => {
               console.warn("assign villager sync failed", err);
+              void reloadBoard(engine).catch(() => {});
+            });
+          return;
+        }
+
+        if ((targetHasZombie && sourceHasVillager) || (sourceHasZombie && targetHasVillager)) {
+          const zombieStackId = targetHasZombie ? target : ended.stackId;
+          const villagerStackId = targetHasVillager ? target : ended.stackId;
+          void cmdZombieClear(zombieStackId, villagerStackId, target)
+            .then(() => reloadBoard(engine))
+            .then(() => refreshInventory())
+            .then(() => scheduleLiveSync(engine))
+            .catch((err) => {
+              console.warn("zombie clear sync failed", err);
               void reloadBoard(engine).catch(() => {});
             });
           return;
