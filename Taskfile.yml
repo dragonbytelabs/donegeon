@@ -71,3 +71,18 @@ tasks:
     desc: Run backup/restore drill and verify digest parity
     cmds:
       - ./scripts/backup_drill.sh data /tmp
+
+  uat-smoke:
+    desc: Run API-level UAT smoke suites for server/board/task systems
+    cmds:
+      - ./scripts/uat_smoke.sh
+
+  coverage-gate:
+    desc: Run Go coverage gate (default threshold 90)
+    cmds:
+      - ./scripts/coverage_gate.sh {{.THRESHOLD | default "90"}}
+
+  qa-gate:
+    desc: Run full QA gate (UAT smoke + Go coverage + frontend build)
+    cmds:
+      - ./scripts/qa_gate.sh {{.THRESHOLD | default "90"}}

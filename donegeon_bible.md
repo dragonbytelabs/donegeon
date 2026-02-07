@@ -185,6 +185,7 @@ The backend must enforce these; the frontend may only display hints.
 - Installed plugins can spawn integration cards (`mod.plugin_*`) onto the board via `/tasks` marketplace controls.
 - Added onboarding + team setup flow with `/onboarding` gate after OTP; users must complete profile/team setup before `/tasks` and `/board`.
 - Added calendar export for tasks via `GET /api/tasks/{id}/calendar.ics` and wired export buttons in both `/tasks` list and board task modal.
+- Added verification automation scripts: `scripts/uat_smoke.sh`, `scripts/coverage_gate.sh`, and `scripts/qa_gate.sh`, plus comprehensive UAT matrix in `uat.md`.
 
 ### 2026-01-30
 - IndexedDB (idb) stores board state in browser for offline persistence

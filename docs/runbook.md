@@ -55,6 +55,16 @@ Low-level CLI:
 
 ## Incident Quick Actions
 
+## Validation Commands
+
+Before a release candidate deploy, run:
+
+- Full QA gate: `./scripts/qa_gate.sh 90`
+- API smoke only: `./scripts/uat_smoke.sh`
+- Coverage gate only: `./scripts/coverage_gate.sh 90`
+
+UAT checklist and manual verification cases are tracked in `uat.md`.
+
 ### Auth failures spike
 
 1. Check `/readyz` and logs for auth repo read/write errors.
@@ -73,4 +83,3 @@ Low-level CLI:
 2. Restore artifact into fresh directory (for example `data-restored`).
 3. Validate JSON files and run smoke checks (`/healthz`, `/readyz`, auth login, `/tasks`, `/board`).
 4. Swap directories atomically and restart.
-

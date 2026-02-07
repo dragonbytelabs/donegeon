@@ -8,6 +8,7 @@ Last updated: 2026-02-07
 - [ ] `docs/p0_defects.md` reviewed and up to date.
 - [ ] `go test ./...` passing.
 - [ ] Frontend build passing (`bun run build` in `frontend/packages/web`).
+- [ ] QA gate passing (`./scripts/qa_gate.sh 90`), or approved exception documented.
 - [ ] Production env variables reviewed for auth/session cookies.
 
 ## Security Review (Auth/Session)
@@ -32,6 +33,7 @@ Last updated: 2026-02-07
 - [ ] Readiness check configured: `GET /readyz`
 - [ ] Log pipeline captures `request_id` and status fields.
 - [ ] On-call has access to runbook (`docs/runbook.md`).
+- [ ] UAT runbook completed (`uat.md`) with evidence links.
 
 ## Sign-off
 

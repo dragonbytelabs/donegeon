@@ -147,6 +147,137 @@ func TestServer_HealthAndReadinessExposeRequestID(t *testing.T) {
 	}
 }
 
+func TestServer_BoardTaskRoundTripAndCalendarExport(t *testing.T) {
+	app := newTestApp(t)
+	app.loginAndOnboard(t, "roundtrip@example.com")
+
+	seedRes := app.json(http.MethodPost, "/api/board/cmd", map[string]any{
+		"cmd":  "board.seed_default",
+		"args": map[string]any{"deckRowY": 560},
+	})
+	if seedRes.Code != http.StatusOK {
+		t.Fatalf("board seed expected 200, got %d body=%s", seedRes.Code, seedRes.Body.String())
+	}
+
+	createRes := app.json(http.MethodPost, "/api/board/cmd", map[string]any{
+		"cmd":  "task.create_blank",
+		"args": map[string]any{"x": 320, "y": 260},
+	})
+	if createRes.Code != http.StatusOK {
+		t.Fatalf("task.create_blank expected 200, got %d body=%s", createRes.Code, createRes.Body.String())
+	}
+	createBody := decodeBodyMap(t, createRes)
+	patch := asMap(t, createBody["patch"])
+	taskID := asString(t, patch["taskId"])
+	taskCardID := asString(t, asMap(t, patch["card"])["id"])
+	taskStackID := asString(t, asMap(t, patch["stack"])["id"])
+
+	for cmd, args := range map[string]map[string]any{
+		"task.set_title": {
+			"taskCardId": taskCardID,
+			"title":      "Roundtrip task",
+		},
+		"task.set_description": {
+			"taskCardId":  taskCardID,
+			"description": "Created on board and verified in tasks",
+		},
+	} {
+		res := app.json(http.MethodPost, "/api/board/cmd", map[string]any{"cmd": cmd, "args": args})
+		if res.Code != http.StatusOK {
+			t.Fatalf("%s expected 200, got %d body=%s", cmd, res.Code, res.Body.String())
+		}
+	}
+
+	tasksRes := app.request(http.MethodGet, "/api/tasks?live=true", nil, "")
+	if tasksRes.Code != http.StatusOK {
+		t.Fatalf("list live tasks expected 200, got %d body=%s", tasksRes.Code, tasksRes.Body.String())
+	}
+	if !strings.Contains(tasksRes.Body.String(), taskID) {
+		t.Fatalf("expected live tasks response to include created task id %s, body=%s", taskID, tasksRes.Body.String())
+	}
+
+	dueDate := "2026-02-12"
+	patchRes := app.json(http.MethodPatch, "/api/tasks/"+taskID, map[string]any{
+		"dueDate": dueDate,
+		"recurrence": map[string]any{
+			"type":     "weekly",
+			"interval": 1,
+		},
+		"modifiers": []map[string]any{
+			{"defId": "mod.deadline_pin"},
+			{"defId": "mod.recurring"},
+		},
+	})
+	if patchRes.Code != http.StatusOK {
+		t.Fatalf("task patch expected 200, got %d body=%s", patchRes.Code, patchRes.Body.String())
+	}
+
+	icsRes := app.request(http.MethodGet, "/api/tasks/"+taskID+"/calendar.ics", nil, "")
+	if icsRes.Code != http.StatusOK {
+		t.Fatalf("calendar export expected 200, got %d body=%s", icsRes.Code, icsRes.Body.String())
+	}
+	icsBody := icsRes.Body.String()
+	for _, want := range []string{
+		"BEGIN:VCALENDAR",
+		"SUMMARY:Roundtrip task",
+		"DTSTART;VALUE=DATE:20260212",
+		"RRULE:FREQ=WEEKLY;INTERVAL=1",
+		"END:VCALENDAR",
+	} {
+		if !strings.Contains(icsBody, want) {
+			t.Fatalf("calendar export missing %q body=%s", want, icsBody)
+		}
+	}
+
+	boardStateRes := app.request(http.MethodGet, "/api/board/state", nil, "")
+	if boardStateRes.Code != http.StatusOK {
+		t.Fatalf("board state expected 200, got %d body=%s", boardStateRes.Code, boardStateRes.Body.String())
+	}
+	state := decodeBoardState(t, boardStateRes)
+	villagerStackID := findStackIDByKind(state, "villager")
+	if villagerStackID == "" {
+		t.Fatalf("expected a villager stack in seeded board state")
+	}
+
+	assignRes := app.json(http.MethodPost, "/api/board/cmd", map[string]any{
+		"cmd": "task.assign_villager",
+		"args": map[string]any{
+			"taskStackId":     taskStackID,
+			"villagerStackId": villagerStackID,
+		},
+	})
+	if assignRes.Code != http.StatusOK {
+		t.Fatalf("task.assign_villager expected 200, got %d body=%s", assignRes.Code, assignRes.Body.String())
+	}
+
+	completeRes := app.json(http.MethodPost, "/api/board/cmd", map[string]any{
+		"cmd":  "task.complete_by_task_id",
+		"args": map[string]any{"taskId": taskID},
+	})
+	if completeRes.Code != http.StatusOK {
+		t.Fatalf("task.complete_by_task_id expected 200, got %d body=%s", completeRes.Code, completeRes.Body.String())
+	}
+
+	taskRes := app.request(http.MethodGet, "/api/tasks/"+taskID, nil, "")
+	if taskRes.Code != http.StatusOK {
+		t.Fatalf("task get expected 200, got %d body=%s", taskRes.Code, taskRes.Body.String())
+	}
+	taskBody := decodeBodyMap(t, taskRes)
+	done, _ := taskBody["done"].(bool)
+	if !done {
+		t.Fatalf("expected task to be done after completion, body=%s", taskRes.Body.String())
+	}
+
+	boardStateRes = app.request(http.MethodGet, "/api/board/state", nil, "")
+	if boardStateRes.Code != http.StatusOK {
+		t.Fatalf("board state expected 200 after completion, got %d body=%s", boardStateRes.Code, boardStateRes.Body.String())
+	}
+	state = decodeBoardState(t, boardStateRes)
+	if boardContainsTaskID(state, taskID) {
+		t.Fatalf("expected completed task %s to be removed from board state", taskID)
+	}
+}
+
 type testApp struct {
 	handler http.Handler
 	logs    *bytes.Buffer
@@ -245,4 +376,111 @@ func otpCodeFromLogs(t *testing.T, logs *bytes.Buffer) string {
 		t.Fatalf("malformed OTP log match: %+v", last)
 	}
 	return last[1]
+}
+
+func (a *testApp) loginAndOnboard(t *testing.T, email string) {
+	t.Helper()
+
+	res := a.json(http.MethodPost, "/api/auth/request-otp", map[string]any{
+		"email": email,
+	})
+	if res.Code != http.StatusOK {
+		t.Fatalf("request otp expected 200, got %d body=%s", res.Code, res.Body.String())
+	}
+
+	code := otpCodeFromLogs(t, a.logs)
+	verifyRes := a.json(http.MethodPost, "/api/auth/verify-otp", map[string]any{
+		"email": email,
+		"code":  code,
+	})
+	if verifyRes.Code != http.StatusOK {
+		t.Fatalf("verify otp expected 200, got %d body=%s", verifyRes.Code, verifyRes.Body.String())
+	}
+
+	completeRes := a.json(http.MethodPost, "/api/player/onboarding/complete", map[string]any{
+		"displayName": "Integration User",
+		"teamName":    "Integration Team",
+	})
+	if completeRes.Code != http.StatusOK {
+		t.Fatalf("onboarding complete expected 200, got %d body=%s", completeRes.Code, completeRes.Body.String())
+	}
+}
+
+type boardStateSnapshot struct {
+	Stacks map[string]struct {
+		Cards []string `json:"cards"`
+	} `json:"stacks"`
+	Cards map[string]struct {
+		DefID string         `json:"defId"`
+		Data  map[string]any `json:"data"`
+	} `json:"cards"`
+}
+
+func decodeBodyMap(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode json body failed: %v body=%s", err, rec.Body.String())
+	}
+	return out
+}
+
+func decodeBoardState(t *testing.T, rec *httptest.ResponseRecorder) boardStateSnapshot {
+	t.Helper()
+	var out boardStateSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode board state failed: %v body=%s", err, rec.Body.String())
+	}
+	return out
+}
+
+func asMap(t *testing.T, v any) map[string]any {
+	t.Helper()
+	out, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T (%v)", v, v)
+	}
+	return out
+}
+
+func asString(t *testing.T, v any) string {
+	t.Helper()
+	s, ok := v.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T (%v)", v, v)
+	}
+	return s
+}
+
+func findStackIDByKind(state boardStateSnapshot, kind string) string {
+	prefix := strings.TrimSpace(kind) + "."
+	for stackID, stack := range state.Stacks {
+		for _, cid := range stack.Cards {
+			card, ok := state.Cards[cid]
+			if !ok {
+				continue
+			}
+			if strings.HasPrefix(card.DefID, prefix) {
+				return stackID
+			}
+		}
+	}
+	return ""
+}
+
+func boardContainsTaskID(state boardStateSnapshot, taskID string) bool {
+	want := strings.TrimSpace(taskID)
+	if want == "" {
+		return false
+	}
+	for _, card := range state.Cards {
+		if !strings.HasPrefix(card.DefID, "task.") {
+			continue
+		}
+		v, _ := card.Data["taskId"].(string)
+		if strings.TrimSpace(v) == want {
+			return true
+		}
+	}
+	return false
 }
