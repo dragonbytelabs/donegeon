@@ -1,231 +1,105 @@
 {
   "stacks": {
-    "stack_0f7f891b": {
-      "id": "stack_0f7f891b",
+    "stack_79558ca0": {
+      "id": "stack_79558ca0",
       "pos": {
-        "x": 89,
-        "y": 419
+        "x": 67,
+        "y": 595
       },
-      "z": 12,
+      "z": 11,
       "cards": [
-        "card_699b735b"
+        "card_21517b17"
       ]
     },
-    "stack_2e9a8c1e": {
-      "id": "stack_2e9a8c1e",
+    "stack_99d73dab": {
+      "id": "stack_99d73dab",
       "pos": {
-        "x": 573,
-        "y": 111
-      },
-      "z": 24,
-      "cards": [
-        "card_82f2988a"
-      ]
-    },
-    "stack_3049678f": {
-      "id": "stack_3049678f",
-      "pos": {
-        "x": 749,
-        "y": 199
-      },
-      "z": 39,
-      "cards": [
-        "card_ff698dd9",
-        "card_10ae3e91",
-        "card_e5aaacf8"
-      ]
-    },
-    "stack_42ba44cb": {
-      "id": "stack_42ba44cb",
-      "pos": {
-        "x": 243,
-        "y": 199
-      },
-      "z": 28,
-      "cards": [
-        "card_f0cf9a7c"
-      ]
-    },
-    "stack_6df7cc30": {
-      "id": "stack_6df7cc30",
-      "pos": {
-        "x": 221,
-        "y": 111
-      },
-      "z": 29,
-      "cards": [
-        "card_1abd17a7"
-      ]
-    },
-    "stack_74011c27": {
-      "id": "stack_74011c27",
-      "pos": {
-        "x": 331,
-        "y": 243
-      },
-      "z": 27,
-      "cards": [
-        "card_a860dea5"
-      ]
-    },
-    "stack_c4f16a4d": {
-      "id": "stack_c4f16a4d",
-      "pos": {
-        "x": 463,
-        "y": 243
-      },
-      "z": 26,
-      "cards": [
-        "card_c5f8289a"
-      ]
-    },
-    "stack_e5074def": {
-      "id": "stack_e5074def",
-      "pos": {
-        "x": 507,
-        "y": 45
-      },
-      "z": 23,
-      "cards": [
-        "card_064a050b"
-      ]
-    },
-    "stack_e8fb1257": {
-      "id": "stack_e8fb1257",
-      "pos": {
-        "x": 551,
-        "y": 419
-      },
-      "z": 15,
-      "cards": [
-        "card_52298d0d"
-      ]
-    },
-    "stack_e97e9e4e": {
-      "id": "stack_e97e9e4e",
-      "pos": {
-        "x": 23,
-        "y": 23
-      },
-      "z": 19,
-      "cards": [
-        "card_7ebcfaf8"
-      ]
-    },
-    "stack_f533f7f4": {
-      "id": "stack_f533f7f4",
-      "pos": {
-        "x": 419,
-        "y": 419
+        "x": 397,
+        "y": 595
       },
       "z": 14,
       "cards": [
-        "card_2997b95c"
+        "card_d4f1e6ee"
       ]
     },
-    "stack_f9841d7a": {
-      "id": "stack_f9841d7a",
+    "stack_a0968bfc": {
+      "id": "stack_a0968bfc",
       "pos": {
-        "x": 89,
-        "y": 573
+        "x": 419,
+        "y": 199
+      },
+      "z": 16,
+      "cards": [
+        "card_f1252427"
+      ]
+    },
+    "stack_ba076f3a": {
+      "id": "stack_ba076f3a",
+      "pos": {
+        "x": 309,
+        "y": 199
+      },
+      "z": 15,
+      "cards": [
+        "card_e9c7a5b2"
+      ]
+    },
+    "stack_c6bdf779": {
+      "id": "stack_c6bdf779",
+      "pos": {
+        "x": 287,
+        "y": 595
       },
       "z": 13,
       "cards": [
-        "card_b59cb78f"
+        "card_554f4fea"
+      ]
+    },
+    "stack_f7d3deb9": {
+      "id": "stack_f7d3deb9",
+      "pos": {
+        "x": 177,
+        "y": 595
+      },
+      "z": 12,
+      "cards": [
+        "card_28adb626"
       ]
     }
   },
   "cards": {
-    "card_064a050b": {
-      "id": "card_064a050b",
-      "defId": "task.blank"
+    "card_21517b17": {
+      "id": "card_21517b17",
+      "defId": "deck.first_day"
     },
-    "card_10ae3e91": {
-      "id": "card_10ae3e91",
-      "defId": "mod.next_action"
+    "card_28adb626": {
+      "id": "card_28adb626",
+      "defId": "deck.collect"
     },
-    "card_1abd17a7": {
-      "id": "card_1abd17a7",
-      "defId": "mod.recurring"
+    "card_554f4fea": {
+      "id": "card_554f4fea",
+      "defId": "deck.organization"
     },
-    "card_2997b95c": {
-      "id": "card_2997b95c",
+    "card_d4f1e6ee": {
+      "id": "card_d4f1e6ee",
+      "defId": "deck.survival"
+    },
+    "card_e9c7a5b2": {
+      "id": "card_e9c7a5b2",
       "defId": "villager.basic",
       "data": {
         "name": "Flicker"
       }
     },
-    "card_52298d0d": {
-      "id": "card_52298d0d",
+    "card_f1252427": {
+      "id": "card_f1252427",
       "defId": "villager.basic",
       "data": {
         "name": "Pip"
       }
-    },
-    "card_699b735b": {
-      "id": "card_699b735b",
-      "defId": "deck.organization"
-    },
-    "card_7ebcfaf8": {
-      "id": "card_7ebcfaf8",
-      "defId": "deck.first_day"
-    },
-    "card_82f2988a": {
-      "id": "card_82f2988a",
-      "defId": "loot.coin",
-      "data": {
-        "amount": 1
-      }
-    },
-    "card_a860dea5": {
-      "id": "card_a860dea5",
-      "defId": "task.blank"
-    },
-    "card_b59cb78f": {
-      "id": "card_b59cb78f",
-      "defId": "deck.survival"
-    },
-    "card_c5f8289a": {
-      "id": "card_c5f8289a",
-      "defId": "task.blank"
-    },
-    "card_e5aaacf8": {
-      "id": "card_e5aaacf8",
-      "defId": "task.instance",
-      "data": {
-        "description": "asdf",
-        "done": true,
-        "modifiers": [
-          {
-            "defId": "mod.recurring"
-          },
-          {
-            "defId": "mod.next_action"
-          }
-        ],
-        "nextAction": true,
-        "project": "asdf",
-        "recurrence": {
-          "interval": 2,
-          "type": "monthly"
-        },
-        "tags": [
-          "a"
-        ],
-        "taskId": "task_654f4b037a9feb9d",
-        "title": "asdf"
-      }
-    },
-    "card_f0cf9a7c": {
-      "id": "card_f0cf9a7c",
-      "defId": "mod.recurring"
-    },
-    "card_ff698dd9": {
-      "id": "card_ff698dd9",
-      "defId": "mod.recurring"
     }
   },
-  "nextZ": 39,
+  "nextZ": 16,
   "pan": {
     "x": 0,
     "y": 0

@@ -24,11 +24,12 @@ templ AppLayout(title string, scriptSrc string, body templ.Component) {
 					</div>
 
 					<button
-						id="profileBtn"
+						id="appBtn"
 						class="rounded-md border border-border bg-card px-2 py-1 text-xs hover:bg-accent"
 						type="button"
+						onclick="window.location.href='/app'"
 					>
-						Profile
+						App
 					</button>
 				</header>
 

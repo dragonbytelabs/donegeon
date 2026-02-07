@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"donegeon/internal/auth"
 	"donegeon/internal/board"
 	"donegeon/internal/config"
 	"donegeon/internal/task"
@@ -24,13 +25,25 @@ func main() {
 	// Static assets
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
+	// ---- Auth ----
+	authRepo, err := auth.NewFileRepo("data/auth")
+	if err != nil {
+		log.Fatalf("init auth repo: %v", err)
+	}
+	authService := auth.NewService(authRepo, log.Default())
+	authHandler := auth.NewHandler(authService)
+	mux.HandleFunc("/api/auth/request-otp", authHandler.RequestOTP)
+	mux.HandleFunc("/api/auth/verify-otp", authHandler.VerifyOTP)
+	mux.HandleFunc("/api/auth/session", authHandler.Session)
+	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
+
 	// ---- Task API ----
 	taskRepo := task.NewMemoryRepo()
 	taskHandler := task.NewHandler(taskRepo)
 
-	mux.HandleFunc("/api/tasks", taskHandler.TasksRoot)      // POST /api/tasks
-	mux.HandleFunc("/api/tasks/", taskHandler.TasksSub)      // GET/PATCH /api/tasks/{id}, PUT /api/tasks/{id}/modifiers
-	mux.HandleFunc("/api/tasks/live", taskHandler.TasksLive) // PUT /api/tasks/live
+	mux.Handle("/api/tasks", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksRoot)))      // GET,POST /api/tasks
+	mux.Handle("/api/tasks/", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksSub)))      // GET,PATCH /api/tasks/{id}
+	mux.Handle("/api/tasks/live", authService.RequireAPI(http.HandlerFunc(taskHandler.TasksLive))) // PUT /api/tasks/live
 
 	// ---- Board API ----
 	boardRepo, err := board.NewFileRepo("data/boards")
@@ -39,11 +52,11 @@ func main() {
 	}
 	boardHandler := board.NewHandler(boardRepo, taskRepo, cfg)
 
-	mux.HandleFunc("/api/board/state", boardHandler.GetState) // GET /api/board/state
-	mux.HandleFunc("/api/board/cmd", boardHandler.Command)    // POST /api/board/cmd
+	mux.Handle("/api/board/state", authService.RequireAPI(http.HandlerFunc(boardHandler.GetState))) // GET/PUT /api/board/state
+	mux.Handle("/api/board/cmd", authService.RequireAPI(http.HandlerFunc(boardHandler.Command)))    // POST /api/board/cmd
 
 	// API: expose config to frontend (read-only)
-	mux.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/api/config", authService.RequireAPI(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -51,12 +64,14 @@ func main() {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-	})
+	})))
 
 	// Pages
 	mux.Handle("/", templ.Handler(page.HomePage()))
-	mux.Handle("/board", templ.Handler(page.BoardPage(cfg.UI.Board)))
-	mux.Handle("/tasks", templ.Handler(page.TasksPage()))
+	mux.Handle("/login", templ.Handler(page.LoginPage()))
+	mux.HandleFunc("/app", authService.HandleAppRoute)
+	mux.Handle("/board", authService.RequirePage(templ.Handler(page.BoardPage(cfg.UI.Board))))
+	mux.Handle("/tasks", authService.RequirePage(templ.Handler(page.TasksPage())))
 
 	addr := ":42069"
 	log.Printf("listening on http://localhost%s", addr)
